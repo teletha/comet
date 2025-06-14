@@ -1,5 +1,6 @@
 import { lang as i18n } from './lang/lang.js'; // .js拡張子を追加 (ES Modulesの解決のため)
 import type { D1Database, D1Result, ExecutionContext } from '@cloudflare/workers-types';
+import { Hono } from 'hono';
 
 // D1 と環境変数の型定義
 interface Env {
@@ -7,6 +8,13 @@ interface Env {
   ADMIN_PASS?: string;
   TURNSTILE_SITEKEY?: string;
   TURNSTILE_SECRET_KEY?: string;
+}
+
+// Honoのコンテキストにセットする変数の型
+type HonoVariables = {
+  lang: string;
+  theme: string;
+  i18nTranslate: Record<string, string>; // i18n[lang] の結果の型に合わせて調整してください
 }
   
   /** 解析 cookie ユーティリティ関数 */
@@ -84,8 +92,10 @@ function plainTextToHtml(str: string | null | undefined): string {
     return notificationHtml;
   }
   
-  export default {
-    async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+  const app = new Hono<{ Bindings: Env, Variables: HonoVariables }>();
+
+  app.all('*', async (c, next) => {
+    const request = c.req.raw; // HonoのRequestからオリジナルのRequestオブジェクトを取得
       const url = new URL(request.url);
       const pathname = url.pathname;
   
@@ -93,87 +103,194 @@ function plainTextToHtml(str: string | null | undefined): string {
       const lang = await getLanguage(request);
       // 初期化テーマ
       const theme = await getTheme(request);
-  
-      // ルーティング
+
+      // Honoのコンテキストにlangとthemeをセットして下流のハンドラで使えるようにする (任意)
+      c.set('lang', lang);
+      c.set('theme', theme);
+      c.set('i18nTranslate', i18n[lang] || i18n['en']);
+
+    await next();
+  });
+
+  // ホームページ
+  app.get('/', async (c) => {
+    const request = c.req.raw;
+    const lang = c.get('lang'); // 型が string と推論される
+    const theme = c.get('theme'); // 型が string と推論される
+    return handleHomePage(request, c.env, lang, theme);
+  });
+
+  // 管理者ログイン
+  app.post('/login', async (c) => {
+    return handleLogin(c.req.raw, c.env);
+  });
+
+  // 議論エリアの作成(管理者)
+  app.post('/create', async (c) => {
+    return handleCreateCommentArea(c.req.raw, c.env);
+  });
+
+  // コメントリスト取得
+  app.get('/area/:areaKey/comments', async (c) => {
+    return handleGetComments(c.req.raw, c.env);
+  });
+
+  // 議論エリアページ
+  app.get('/area/:areaKey', async (c) => {
+    const request = c.req.raw;
+    const lang = c.get('lang'); // 型が string と推論される
+    const theme = c.get('theme'); // 型が string と推論される
+    return handleCommentAreaPage(request, c.env, lang, theme);
+  });
+
+  // コメント投稿
+  app.post('/area/:areaKey/comment', async (c) => {
+    return handlePostComment(c.req.raw, c.env);
+  });
+
+  // コメントレポート
+  app.post('/area/:areaKey/comment/:commentId/report', async (c) => {
+    return handleReportComment(c.req.raw, c.env);
+  });
+
+  // コメントいいね (削除済みであればこのルートも不要)
+  app.post('/area/:areaKey/comment/:commentId/like', async (c) => {
+    return handleLikeComment(c.req.raw, c.env);
+  });
+
+  // 管理者操作 - エリア削除
+  app.post('/admin/area/:areaKey/delete', async (c) => {
+    const areaKey = c.req.param('areaKey');
+    return handleDeleteArea(areaKey, c.req.raw, c.env);
+  });
+
+  // 管理者操作 - エリア非表示切り替え
+  app.post('/admin/area/:areaKey/toggleHide', async (c) => {
+    const areaKey = c.req.param('areaKey');
+    return handleToggleHideArea(areaKey, c.req.raw, c.env);
+  });
+
+  // 管理者操作 - コメントピン留め切り替え
+  app.post('/admin/comment/:commentId/togglePin', async (c) => {
+    const commentId = parseInt(c.req.param('commentId'), 10);
+    return handleTogglePinComment(commentId, c.req.raw, c.env);
+  });
+
+  // 管理者操作 - レポート解決
+  app.post('/admin/reports/resolve/:reportId', async (c) => {
+    const reportId = parseInt(c.req.param('reportId'), 10);
+    return handleResolveReport(reportId, c.req.raw, c.env);
+  });
+
+  // 管理者操作 - コメント非表示切り替え
+  app.post('/admin/comment/:commentId/toggleHide', async (c) => {
+    const commentId = parseInt(c.req.param('commentId'), 10);
+    return handleToggleHideComment(commentId, c.req.raw, c.env);
+  });
+
+  // より詳細な管理者情報の取得
+  app.get('/admin/extendedInfo', async (c) => {
+    return handleAdminExtendedInfo(c.req.raw, c.env);
+  });
+
+  // 言語切り替え
+  app.post('/setLang', async (c) => {
+    return handleSetLang(c.req.raw, c.env);
+  });
+
+  // テーマ切り替え
+  app.post('/setTheme', async (c) => {
+    return handleSetTheme(c.req.raw, c.env);
+  });
+
+  // 埋め込みページ
+  app.get('/embed/area/:areaKey', async (c) => {
+    const areaKey = c.req.param('areaKey');
+    const request = c.req.raw;
+    const lang = c.get('lang'); // 型が string と推論される
+    const theme = c.get('theme'); // 型が string と推論される
+    return handleEmbedCommentArea(areaKey, request, c.env, lang, theme);
+  });
+
+  // Not Found (Honoがデフォルトで処理しますが、明示的に書くこともできます)
+  // app.notFound((c) => c.text('Not Found', 404))
+
+  // 従来のルーティングロジックをHonoのルートに置き換えた後のフォールバック
+  // Honoが一致するルートを見つけられなかった場合に実行される
+  // ただし、上記のルート定義ですべてのパスをカバーしていれば、ここには到達しないはず
+  app.all('*', (c) => {
+    // この部分は、Honoのルート定義に移行できなかった場合の最終的なフォールバック
+    // または、Honoの .notFound() を使用する
+    const request = c.req.raw;
+    const url = new URL(request.url);
+    const pathname = url.pathname;
+    console.warn(`Unhandled path by Hono, falling back to old logic (or should be 404): ${pathname}`);
+    // ここに従来の if/else ルーティングの残りを記述するか、
+    // すべてのルートがHonoに移行されていれば、単に404を返す
       if (pathname === '/' && request.method === 'GET') {
-        // ホームページ：ログインフォームまたは管理パネルを表示
-        return handleHomePage(request, env, lang, theme);
+        return handleHomePage(request, c.env, c.get('lang') as string, c.get('theme') as string); // フォールバック内では型アサーションが必要な場合がある
       } else if (pathname === '/login' && request.method === 'POST') {
-        // 管理者ログイン
-        return handleLogin(request, env);
+        return handleLogin(request, c.env);
       } else if (pathname === '/create' && request.method === 'POST') {
-        // 議論エリアの作成(管理者)
-        return handleCreateCommentArea(request, env);
+        return handleCreateCommentArea(request, c.env);
       } else if (pathname.startsWith('/area/') && request.method === 'GET') {
-        // 議論エリアへのアクセス、またはコメントJSONの取得
         if (pathname.endsWith('/comments')) {
-          return handleGetComments(request, env);
+          return handleGetComments(request, c.env);
         } else {
-          // 議論エリアページ
-          return handleCommentAreaPage(request, env, lang, theme);
+          return handleCommentAreaPage(request, c.env, c.get('lang') as string, c.get('theme') as string);
         }
       } else if (pathname.startsWith('/area/') && request.method === 'POST') {
-        // コメントまたはレポート
         if (pathname.endsWith('/comment')) {
-          return handlePostComment(request, env);
+          return handlePostComment(request, c.env);
         }
         if (pathname.match(/^\/area\/[^/]+\/comment\/\d+\/report$/)) {
-          return handleReportComment(request, env);
+          return handleReportComment(request, c.env);
         }
           if (pathname.match(/^\/area\/[^/]+\/comment\/\d+\/like$/)) {
-              return handleLikeComment(request, env);
+              return handleLikeComment(request, c.env);
           }
       }
-  
-      // 管理者操作
       if (pathname.startsWith('/admin/') && request.method === 'POST') {
         const matchDeleteArea = pathname.match(/^\/admin\/area\/([^/]+)\/delete$/);
         if (matchDeleteArea) {
-          return handleDeleteArea(matchDeleteArea[1], request, env);
+          return handleDeleteArea(matchDeleteArea[1], request, c.env);
         }
         const matchHideArea = pathname.match(/^\/admin\/area\/([^/]+)\/toggleHide$/);
         if (matchHideArea) {
-          return handleToggleHideArea(matchHideArea[1], request, env);
+          return handleToggleHideArea(matchHideArea[1], request, c.env);
         }
         const matchPinComment = pathname.match(/^\/admin\/comment\/(\d+)\/togglePin$/);
         if (matchPinComment) {
           const commentId = parseInt(matchPinComment[1], 10);
-          return handleTogglePinComment(commentId, request, env);
+          return handleTogglePinComment(commentId, request, c.env);
         }
         const matchResolveReport = pathname.match(/^\/admin\/reports\/resolve\/(\d+)$/);
         if (matchResolveReport) {
-          return handleResolveReport(parseInt(matchResolveReport[1], 10), request, env);
+          return handleResolveReport(parseInt(matchResolveReport[1], 10), request, c.env);
         }
         const matchToggleHideComment = pathname.match(/^\/admin\/comment\/(\d+)\/toggleHide$/);
         if (matchToggleHideComment) {
           const commentId = parseInt(matchToggleHideComment[1], 10);
-          return handleToggleHideComment(commentId, request, env);
+          return handleToggleHideComment(commentId, request, c.env);
         }
       }
-  
-      // より詳細な管理者情報の取得（議論エリアリスト、レポートリストなど）
       if (pathname === '/admin/extendedInfo' && request.method === 'GET') {
-        return handleAdminExtendedInfo(request, env);
+        return handleAdminExtendedInfo(request, c.env);
       }
-  
-      // 言語切り替えの処理
       if (pathname === '/setLang' && request.method === 'POST') {
-        return handleSetLang(request, env);
+        return handleSetLang(request, c.env);
       }
-      // テーマ切り替えの処理
       if(pathname === '/setTheme' && request.method === 'POST') {
-        return handleSetTheme(request, env);
+        return handleSetTheme(request, c.env);
       }
-  
-      // 新規追加: 埋め込みページのルートを処理
       if (pathname.startsWith('/embed/area/') && request.method === 'GET') {
           const areaKey = decodeURIComponent(pathname.replace(/^\/embed\/area\//, ''));
-        return handleEmbedCommentArea(areaKey, request, env, lang, theme);
+        return handleEmbedCommentArea(areaKey, request, c.env, c.get('lang') as string, c.get('theme') as string);
       }
-  
       return new Response("Not Found", { status: 404 });
-    }
-  };
+  });
+
+  export default app;
   
   interface CommentArea {
     id: number;
