@@ -1,8 +1,17 @@
 import { lang as i18n } from './lang/lang.js'; // .js拡張子を追加 (ES Modulesの解決のため)
+import type { D1Database, D1Result, ExecutionContext } from '@cloudflare/workers-types';
+
+// D1 と環境変数の型定義
+interface Env {
+  DB: D1Database;
+  ADMIN_PASS?: string;
+  TURNSTILE_SITEKEY?: string;
+  TURNSTILE_SECRET_KEY?: string;
+}
   
   /** 解析 cookie ユーティリティ関数 */
-  function parseCookie(cookieHeader) {
-    const cookies = {};
+  function parseCookie(cookieHeader: string | null): Record<string, string> {
+    const cookies: Record<string, string> = {};
     if (!cookieHeader) return cookies;
     const parts = cookieHeader.split(';');
     for (const part of parts) {
@@ -20,7 +29,7 @@ import { lang as i18n } from './lang/lang.js'; // .js拡張子を追加 (ES Modu
  * @param {string} str - 変換するプレーンテキスト
  * @returns {string} - 安全なHTML文字列
  */
-function plainTextToHtml(str) {
+function plainTextToHtml(str: string | null | undefined): string {
     if (!str) return '';
     // 1. HTML特殊文字をエスケープ (サニタイズ)
     const escapedStr = str
@@ -36,8 +45,8 @@ function plainTextToHtml(str) {
   
   
   // 言語の取得
-  async function getLanguage(request) {
-    const cookie = parseCookie(request.headers.get("Cookie") || "");
+  async function getLanguage(request: Request): Promise<string> {
+    const cookie = parseCookie(request.headers.get("Cookie"));
     if (cookie.lang) {
       return cookie.lang;
     }
@@ -53,19 +62,19 @@ function plainTextToHtml(str) {
   }
   
   // テーマの取得
-  async function getTheme(request) {
-    const cookie = parseCookie(request.headers.get("Cookie") || "");
+  async function getTheme(request: Request): Promise<string> {
+    const cookie = parseCookie(request.headers.get("Cookie"));
         const urlParams = new URL(request.url).searchParams;
     return urlParams.get('theme') || cookie.theme || 'dark';
   }
   
   /** テーマ/言語のクッキーを設定する */
-  function setCookie(name, value, res) {
+  function setCookie(name: string, value: string, res: Response): void {
     res.headers.append('Set-Cookie', `${name}=${value}; Path=/; SameSite=Lax; Max-Age=3600`);
   }
   
   /**  通知バーを表示する */
-  function showNotification(msg) {
+  function showNotification(msg: string): string {
     const notificationHtml = `
     <div id="notificationBar" class="notification-bar">
       <span id="notificationText">${msg}</span>
@@ -76,7 +85,7 @@ function plainTextToHtml(str) {
   }
   
   export default {
-    async fetch(request, env) {
+    async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
       const url = new URL(request.url);
       const pathname = url.pathname;
   
@@ -166,9 +175,16 @@ function plainTextToHtml(str) {
     }
   };
   
-  async function handleEmbedCommentArea(areaKey, request, env, lang, theme) {
-    const t = i18n[lang];
-    let area = await env.DB.prepare(`
+  interface CommentArea {
+    id: number;
+    name: string;
+    area_key: string;
+    intro: string | null;
+    hidden: number;
+  }
+  async function handleEmbedCommentArea(areaKey: string, request: Request, env: Env, lang: string, theme: string): Promise<Response> {
+    const t = i18n[lang] || i18n['en'];
+    let area: CommentArea | null = await env.DB.prepare(`
     SELECT * FROM comment_areas WHERE area_key = ?
     `).bind(areaKey).first();
 
@@ -184,12 +200,16 @@ function plainTextToHtml(str) {
             // 作成されたエリアの情報を再取得して続行
             area = await env.DB.prepare(`
                 SELECT * FROM comment_areas WHERE area_key = ?
-            `).bind(areaKey).first();
+            `).bind(areaKey).first<CommentArea>();
             console.log(`Comment area '${areaKey}' created automatically for embed.`);
         } catch (e) {
             console.error(`Failed to auto-create comment area '${areaKey}' for embed:`, e);
             // 自動作成に失敗した場合はエラーを返す
-            return new Response(`Failed to create comment area automatically: ${e.message}`, { status: 500 });
+            if (e instanceof Error) {
+                return new Response(`Failed to create comment area automatically: ${e.message}`, { status: 500 });
+            } else {
+                return new Response(`Failed to create comment area automatically: Unknown error`, { status: 500 });
+            }
         }
     }
 
@@ -202,7 +222,7 @@ function plainTextToHtml(str) {
     <html lang="${lang}" data-theme="${theme}">
     <head>
         <meta charset="UTF-8">
-        <title>${t.comment_title} - ${area.name}</title>
+        <title>${t.comment_title} - ${area?.name || areaKey}</title>
         <meta name="viewport" content="width=device-width,initial-scale=1.0">
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/github-markdown-css/5.5.0/github-markdown.min.css" crossorigin="anonymous">
         <style>
@@ -758,11 +778,11 @@ function plainTextToHtml(str) {
 
 
  /** ホームページ：未ログイン => ログイン表示; ログイン済み => 管理パネル(詳細情報を表示) */
- async function handleHomePage(request, env, lang, theme) {
-     const cookie = parseCookie(request.headers.get("Cookie") || "");
+ async function handleHomePage(request: Request, env: Env, lang: string, theme: string): Promise<Response> {
+     const cookie = parseCookie(request.headers.get("Cookie"));
      const authed = (cookie.auth === "1");
      const url = new URL(request.url);
-     const t = i18n[lang];
+     const t = i18n[lang] || i18n['en'];
      // 管理者の議論エリアリスト、レポートリストなどのJSONを取得したい場合
      if (url.searchParams.get('_extendedInfo') === '1' && authed) {
          return handleAdminExtendedInfo(request, env);
@@ -1184,9 +1204,9 @@ function plainTextToHtml(str) {
      });
  }
  /** 管理者の「詳細情報」(議論エリアリスト + レポートリスト) JSON を返す */
- async function handleAdminExtendedInfo(request, env) {
-     const cookie = parseCookie(request.headers.get("Cookie") || "");
-     const authed = (cookie.auth === "1");
+ async function handleAdminExtendedInfo(request: Request, env: Env): Promise<Response> {
+     const cookie = parseCookie(request.headers.get("Cookie"));
+     const authed = cookie.auth === "1";
      if (!authed) {
          return new Response("Unauthorized", { status: 401 });
      }
@@ -1201,7 +1221,7 @@ function plainTextToHtml(str) {
  (SELECT COUNT(*) FROM comments c WHERE c.area_key = a.area_key) as comment_count
  FROM comment_areas a
  ORDER BY a.id DESC
- `).all();
+ `).all<CommentArea & { comment_count: number }>();
      const areas = areasRes.results || [];
      // レポートリストをクエリする（コメント情報と関連付け）
      const reportsRes = await env.DB.prepare(`
@@ -1215,7 +1235,7 @@ function plainTextToHtml(str) {
  FROM reports r
  LEFT JOIN comments c on c.id = r.comment_id
  ORDER BY r.id DESC
- `).all();
+ `).all<{ id: number; comment_id: number; reason: string; created_at: string; resolved: number; comment_content: string | null; }>();
      const reports = reportsRes.results || [];
      return new Response(JSON.stringify({ areas, reports }), {
          status: 200,
@@ -1224,12 +1244,12 @@ function plainTextToHtml(str) {
  }
  
  /** 管理者ログイン */
- async function handleLogin(request, env) {
+ async function handleLogin(request: Request, env: Env): Promise<Response> {
      try {
-         const data = await request.json();
+         const data: { password?: string } = await request.json();
          const password = data.password || '';
          const lang = await getLanguage(request); // 言語を取得
-         const t = i18n[lang]; // 翻訳文字列を取得
+         const t = i18n[lang] || i18n['en']; // 翻訳文字列を取得
  
          if (password === env.ADMIN_PASS) {
              // パスワードが正しい => クッキーを設定
@@ -1244,7 +1264,7 @@ function plainTextToHtml(str) {
                  headers: { 'Content-Type': 'application/json;charset=UTF-8' }
              });
          }
-     } catch (err) {
+     } catch (err: any) {
          return new Response(JSON.stringify({ success: false, message: err.message }), {
              status: 400,
              headers: { 'Content-Type': 'application/json;charset=UTF-8' }
@@ -1253,15 +1273,15 @@ function plainTextToHtml(str) {
  }
  
  /** 管理者が新しい議論エリアを作成する */
- async function handleCreateCommentArea(request, env) {
-     const cookie = parseCookie(request.headers.get("Cookie") || "");
+ async function handleCreateCommentArea(request: Request, env: Env): Promise<Response> {
+     const cookie = parseCookie(request.headers.get("Cookie"));
      if (cookie.auth !== "1") {
          return new Response("Unauthorized", { status: 401 });
      }
  
      const formData = await request.formData();
-     const name = formData.get('area_name') || '';
-     const key = formData.get('area_key') || '';
+     const name = String(formData.get('area_name') || '');
+     const key = String(formData.get('area_key') || '');
      const intro = formData.get('intro') || '';
  
      if (!name || !key) {
@@ -1276,13 +1296,13 @@ function plainTextToHtml(str) {
  }
  
  /** 単一の議論エリアページを表示する（訪問者向け、非表示の場合は403） */
- async function handleCommentAreaPage(request, env, lang, theme) {
+ async function handleCommentAreaPage(request: Request, env: Env, lang: string, theme: string): Promise<Response> {
      const url = new URL(request.url);
       const areaKey = decodeURIComponent(url.pathname.replace(/^\/area\//, ''));
-     const t = i18n[lang];
-     const area = await env.DB.prepare(`
+     const t = i18n[lang] || i18n['en'];
+     const area: CommentArea | null = await env.DB.prepare(`
  SELECT * FROM comment_areas WHERE area_key = ?
- `).bind(areaKey).first();
+ `).bind(areaKey).first<CommentArea>();
  
      if (!area) {
          return new Response(t.notification_not_found, { status: 404 }); // 翻訳文字列を使用
@@ -1848,25 +1868,36 @@ function plainTextToHtml(str) {
  }
    
  /** コメントリストを取得 (JSON) */
- async function handleGetComments(request, env) {
+ interface Comment {
+    id: number;
+    content: string;
+    parent_id: number;
+    created_at: string;
+    hidden: number;
+    likes: number;
+    pinned: number;
+    html_content?: string; // Optional, added in client-side logic
+    liked?: boolean; // Optional, added in client-side logic
+ }
+ async function handleGetComments(request: Request, env: Env): Promise<Response> {
  const url = new URL(request.url);
  const areaKey = decodeURIComponent(url.pathname.replace(/^\/area\/|\/comments$/g, ''));
  // 議論エリアが非表示かどうかをチェック
- const area = await env.DB.prepare("SELECT hidden FROM comment_areas WHERE area_key=?").bind(areaKey).first();
+ const area: { hidden: number } | null = await env.DB.prepare("SELECT hidden FROM comment_areas WHERE area_key=?").bind(areaKey).first<{ hidden: number }>();
  if (!area) return new Response(JSON.stringify([]), { status: 200 }); // エリアが存在しない場合も空のリストを返す
  if (area.hidden === 1) {
      // 非表示の場合 => 訪問者視点ではコメントなしと見なされる
      return new Response(JSON.stringify([]), { status: 200 });
  }
- const res = await env.DB.prepare(`
+ const res: D1Result<Comment> = await env.DB.prepare(`
  SELECT id, content, parent_id, created_at, hidden, likes, pinned
  FROM comments
  WHERE area_key = ?
  ORDER BY created_at ASC
- `).bind(areaKey).all();
+ `).bind(areaKey).all<Comment>();
  const list = res.results || [];
  // 各コメントにhtml_contentフィールドを追加する（Markdownレンダリング用）
- list.forEach(c => {
+ list.forEach((c: Comment) => {
      c.html_content = c.content;
      c.liked = false;
  });
@@ -1881,13 +1912,13 @@ function plainTextToHtml(str) {
  }
  
  /** コメントを投稿する（返信＋Markdown対応） */
- async function handlePostComment(request, env) {
+ async function handlePostComment(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
     const areaKey = decodeURIComponent(url.pathname.replace(/^\/area\/|\/comment$/g, ''));
     const formData = await request.formData();
-    const content = plainTextToHtml(formData.get('content')) || '';
-    const parentId = parseInt(formData.get('parent_id') || '0', 10);
-    const token = formData.get('cf-turnstile-response');
+    const content = plainTextToHtml(String(formData.get('content') || '')) || '';
+    const parentId = parseInt(String(formData.get('parent_id') || '0'), 10);
+    const tokenValue = formData.get('cf-turnstile-response');
     
     if (!content) {
         return new Response("Missing comment content", { status: 400 });
@@ -1898,20 +1929,20 @@ function plainTextToHtml(str) {
         const verifyUrl = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
         const params = new URLSearchParams();
         params.append('secret', env.TURNSTILE_SECRET_KEY);
-        params.append('response', token || '');
+        params.append('response', typeof tokenValue === 'string' ? tokenValue : ''); 
         const verifyRes = await fetch(verifyUrl, {
             method: 'POST',
             body: params,
             headers: { "Content-Type": "application/x-www-form-urlencoded" }
         });
-        const verifyData = await verifyRes.json();
+        const verifyData: { success: boolean } = await verifyRes.json();
         if (!verifyData.success) {
             return new Response("Turnstile verification failed", { status: 403 });
         }
     }
     
     // コメントエリアの存在チェックと自動作成
-    let area = await env.DB.prepare("SELECT hidden FROM comment_areas WHERE area_key=?").bind(areaKey).first();
+    let area: { hidden: number } | null = await env.DB.prepare("SELECT hidden FROM comment_areas WHERE area_key=?").bind(areaKey).first<{ hidden: number }>();
     
     if (!area) {
         // コメントエリアが存在しない場合、自動的に作成
@@ -1921,7 +1952,7 @@ function plainTextToHtml(str) {
                 INSERT INTO comment_areas (name, area_key, intro, hidden) VALUES (?, ?, ?, 0)
             `).bind(areaKey, areaKey, '', 0).run();
             // 新しく作成されたエリアの情報を取得し直す
-            area = await env.DB.prepare("SELECT hidden FROM comment_areas WHERE area_key=?").bind(areaKey).first();
+            area = await env.DB.prepare("SELECT hidden FROM comment_areas WHERE area_key=?").bind(areaKey).first<{ hidden: number }>();
         } catch (e) {
             console.error("Failed to auto-create comment area:", e);
             return new Response("Failed to create comment area automatically.", { status: 500 });
@@ -1929,7 +1960,7 @@ function plainTextToHtml(str) {
     }
     
     // エリアが隠されているかチェック
-    if (area.hidden === 1) {
+    if (area?.hidden === 1) { // area can be null if creation failed and wasn't re-assigned
         return new Response("This discussion area is not available", { status: 403 });
     }
     
@@ -1941,36 +1972,36 @@ function plainTextToHtml(str) {
     return new Response("OK", { status: 200 });
 }
  /** コメントを「いいね」する */
- async function handleLikeComment(request, env) {
+ async function handleLikeComment(request: Request, env: Env): Promise<Response> {
  const match = request.url.match(/\/comment\/(\d+)\/like$/);
  if (!match) {
      return new Response("Invalid", { status: 400 });
  }
  const commentId = parseInt(match[1], 10);
  // コメントが存在するかチェック
- const comment = await env.DB.prepare("SELECT likes FROM comments WHERE id=?").bind(commentId).first();
+ const comment: { likes: number } | null = await env.DB.prepare("SELECT likes FROM comments WHERE id=?").bind(commentId).first<{ likes: number }>();
  if (!comment) {
      return new Response("Comment does not exist", { status: 404 });
  }
- const newLikes = comment.likes + 1;
+ const newLikes = (comment.likes || 0) + 1;
  await env.DB.prepare("UPDATE comments SET likes=? WHERE id=?").bind(newLikes, commentId).run();
  return new Response("OK", { status: 200 });
  }
  /** コメントをレポートする */
- async function handleReportComment(request, env) {
- const match = request.url.match(/\/comment\/(\d+)\/report$/);
+ async function handleReportComment(request: Request, env: Env): Promise<Response> {
+ const match = new URL(request.url).pathname.match(/\/comment\/(\d+)\/report$/);
  if (!match) {
      return new Response("Invalid", { status: 400 });
  }
  const commentId = parseInt(match[1], 10);
  const formData = await request.formData();
- const reason = formData.get('reason') || '';
+ const reason = String(formData.get('reason') || '');
  
  if (!reason) {
      return new Response("Missing report reason", { status: 400 });
  }
  // コメントが存在するかチェック
- const comment = await env.DB.prepare("SELECT id FROM comments WHERE id=?").bind(commentId).first();
+ const comment: { id: number } | null = await env.DB.prepare("SELECT id FROM comments WHERE id=?").bind(commentId).first<{ id: number }>();
  if (!comment) {
      return new Response("Comment does not exist", { status: 404 });
  }
@@ -1979,14 +2010,14 @@ function plainTextToHtml(str) {
  return new Response("OK", { status: 200 });
  }
  /** 議論エリアを削除する (管理者) */
- async function handleDeleteArea(areaKeyEncoded, request, env) {
-     const cookie = parseCookie(request.headers.get("Cookie") || "");
+ async function handleDeleteArea(areaKeyEncoded: string, request: Request, env: Env): Promise<Response> {
+     const cookie = parseCookie(request.headers.get("Cookie"));
      if (cookie.auth !== "1") {
          return new Response("Unauthorized", { status: 401 });
      }
      const areaKey = decodeURIComponent(areaKeyEncoded);
      // まず存在するかチェック
-     const area = await env.DB.prepare("SELECT id FROM comment_areas WHERE area_key=?").bind(areaKey).first();
+     const area: { id: number } | null = await env.DB.prepare("SELECT id FROM comment_areas WHERE area_key=?").bind(areaKey).first<{ id: number }>();
      if (!area) {
          return new Response("Discussion area does not exist", { status: 404 });
      }
@@ -1997,13 +2028,13 @@ function plainTextToHtml(str) {
      return new Response("OK", { status: 200 });
  }
  /** 議論エリアの非表示状態を切り替える (管理者) */
- async function handleToggleHideArea(areaKeyEncoded, request, env) {
-     const cookie = parseCookie(request.headers.get("Cookie") || "");
+ async function handleToggleHideArea(areaKeyEncoded: string, request: Request, env: Env): Promise<Response> {
+     const cookie = parseCookie(request.headers.get("Cookie"));
      if (cookie.auth !== "1") {
          return new Response("Unauthorized", { status: 401 });
      }
      const areaKey = decodeURIComponent(areaKeyEncoded);
-     const area = await env.DB.prepare("SELECT hidden FROM comment_areas WHERE area_key=?").bind(areaKey).first();
+     const area: { hidden: number } | null = await env.DB.prepare("SELECT hidden FROM comment_areas WHERE area_key=?").bind(areaKey).first<{ hidden: number }>();
      if (!area) {
          return new Response("Discussion area does not exist", { status: 404 });
      }
@@ -2012,43 +2043,43 @@ function plainTextToHtml(str) {
      return new Response("OK", { status: 200 });
  }
  /** 個別コメントの非表示状態を切り替える (管理者) */
- async function handleToggleHideComment(commentId, request, env) {
- const cookie = parseCookie(request.headers.get("Cookie") || "");
+ async function handleToggleHideComment(commentId: number, request: Request, env: Env): Promise<Response> {
+ const cookie = parseCookie(request.headers.get("Cookie"));
  if (cookie.auth !== "1") {
      return new Response("Unauthorized", { status: 401 });
  }
  // 存在するかどうかをクエリ
- const comment = await env.DB.prepare("SELECT hidden FROM comments WHERE id=?").bind(commentId).first();
+ const comment: { hidden: number } | null = await env.DB.prepare("SELECT hidden FROM comments WHERE id=?").bind(commentId).first<{ hidden: number }>();
  if (!comment) {
      return new Response("Comment does not exist", { status: 404 });
  }
- const newHidden = comment.hidden === 1 ? 0 : 1;
+ const newHidden = (comment.hidden || 0) === 1 ? 0 : 1;
  await env.DB.prepare("UPDATE comments SET hidden=? WHERE id=?").bind(newHidden, commentId).run();
  return new Response("OK", { status: 200 });
  }
  /** 個別コメントのピン留め状態を切り替える (管理者) */
- async function handleTogglePinComment(commentId, request, env) {
-    const cookie = parseCookie(request.headers.get("Cookie") || "");
+ async function handleTogglePinComment(commentId: number, request: Request, env: Env): Promise<Response> {
+    const cookie = parseCookie(request.headers.get("Cookie"));
     if (cookie.auth !== "1") {
         return new Response("Unauthorized", { status: 401 });
     }
     // 存在するかどうかをクエリ
-    const comment = await env.DB.prepare("SELECT pinned FROM comments WHERE id=?").bind(commentId).first();
+    const comment: { pinned: number } | null = await env.DB.prepare("SELECT pinned FROM comments WHERE id=?").bind(commentId).first<{ pinned: number }>();
     if (!comment) {
         return new Response("Comment does not exist", { status: 404 });
     }
-    const newPinned = comment.pinned === 1 ? 0 : 1;
+    const newPinned = (comment.pinned || 0) === 1 ? 0 : 1;
     await env.DB.prepare("UPDATE comments SET pinned=? WHERE id=?").bind(newPinned, commentId).run();
     return new Response("OK", { status: 200 });
 }
 /** レポートを処理する -> 処理済みとマーク */
-async function handleResolveReport(reportId, request, env) {
-    const cookie = parseCookie(request.headers.get("Cookie") || "");
+async function handleResolveReport(reportId: number, request: Request, env: Env): Promise<Response> {
+    const cookie = parseCookie(request.headers.get("Cookie"));
     if (cookie.auth !== "1") {
         return new Response("Unauthorized", { status: 401 });
     }
     // 存在するかどうかをクエリ
-    const rep = await env.DB.prepare("SELECT id FROM reports WHERE id=?").bind(reportId).first();
+    const rep: { id: number } | null = await env.DB.prepare("SELECT id FROM reports WHERE id=?").bind(reportId).first<{ id: number }>();
     if (!rep) {
         return new Response("Report does not exist", { status: 404 });
     }
@@ -2056,10 +2087,10 @@ async function handleResolveReport(reportId, request, env) {
     return new Response("OK", { status: 200 });
 }
 /** 言語切り替えを処理する */
-async function handleSetLang(request, env) {
+async function handleSetLang(request: Request, env: Env): Promise<Response> {
     try {
-        const data = await request.json();
-        const lang = data.lang || 'en';
+        const data: { lang?: string } = await request.json();
+        const lang = data.lang || 'en'; // デフォルトは英語
         const res = new Response(JSON.stringify({ success: true }), {
            headers: {
                'Content-Type': 'application/json;charset=UTF-8',
@@ -2070,7 +2101,7 @@ async function handleSetLang(request, env) {
        });
        setCookie('lang', lang, res);
        return res;
-   } catch (err) {
+   } catch (err: any) {
        return new Response(JSON.stringify({ success: false, message: err.message }), {
            status: 400,
            headers: {
@@ -2083,10 +2114,10 @@ async function handleSetLang(request, env) {
    }
 }
 /** テーマ切り替えを処理する */
-async function handleSetTheme(request, env) {
+async function handleSetTheme(request: Request, env: Env): Promise<Response> {
    try {
-       const data = await request.json();
-       const theme = data.theme || 'dark';
+       const data: { theme?: string } = await request.json();
+       const theme = data.theme || 'dark'; // デフォルトはダークテーマ
        const res = new Response(JSON.stringify({ success: true }), {
            headers: {
                 'Content-Type': 'application/json;charset=UTF-8',
@@ -2097,7 +2128,7 @@ async function handleSetTheme(request, env) {
        });
        setCookie('theme', theme, res);
        return res;
-   } catch (err) {
+   } catch (err: any) {
        return new Response(JSON.stringify({ success: false, message: err.message }), {
            status: 400,
            headers: {

@@ -1,6 +1,6 @@
 # wrangler.toml
 name = 'comment'
-main = "src/worker.js"
+main = "src/worker.ts"
 compatibility_date = "2025-06-14"
 
 [[d1_databases]]
