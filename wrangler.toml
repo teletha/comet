@@ -12,4 +12,3 @@ ADMIN_PASS = "test"
 
 [assets]
 directory = "./public"
-binding = "ASSETS"

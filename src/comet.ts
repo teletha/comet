@@ -239,74 +239,7 @@ app.get('/', async (c) => {
 <meta charset="UTF-8">
 <title>${t.home_title}</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/github-markdown-css/5.5.0/github-markdown.min.css" crossorigin="anonymous">
-<style>
-body {
-    background: var(--bg-color); color: var(--text-color); font-family: sans-serif;
-    max-width: 800px; margin: 40px auto; padding: 20px;
-}
-h1 { margin-bottom: 20px; }
-a { color: var(--link-color); text-decoration: none; }
-a:hover { color: var(--link-hover-color); }
-ul { list-style: none; padding: 0; }
-li { margin-bottom: 10px; }
-.hidden { display: none; }
-.form-group {
-    display: flex; flex-direction: column; margin: 20px 0;
-}
-.form-group input {
-    background: var(--input-bg-color); border: 1px solid var(--border-color); padding: 10px; color: var(--text-color); font-size: 14px; margin-bottom: 10px;
-}
-.form-group button {
-    background: var(--button-bg-color); color: var(--button-text-color); border: none; padding: 10px; font-size: 14px; cursor: pointer;
-    transition: background 0.3s ease, transform 0.2s ease;
-}
-.form-group button:hover {
-    background: var(--button-hover-color); transform: scale(1.02);
-}
-hr { border: none; border-bottom: 1px solid var(--border-color); margin: 20px 0; }
-.notification-bar {
-    position: fixed; bottom: 0; left: 0; width: 100%; background: var(--notification-bg-color); color: var(--notification-text-color); padding: 10px 20px;
-    display: flex; align-items: center; justify-content: space-between; font-size: 14px; z-index: 9999;
-}
-.notification-bar.hidden { display: none; }
-.close-btn { cursor: pointer; margin-left: 20px; font-weight: bold; }
-.admin-section { margin-top: 30px; }
-.table-like { width: 100%; border-collapse: collapse; }
-.table-like th, .table-like td { border: none; padding: 8px; text-align: left;}
-.table-like th { background: var(--table-header-bg-color); }
-@media (max-width: 600px) {
-body { margin: 20px auto; padding: 10px; }
-}
-:root {
-  --bg-color: #121212;
-  --text-color: #fff;
-  --link-color: #bbb;
-  --link-hover-color: #fff;
-  --input-bg-color: #1e1e1e;
-  --border-color: #444;
-  --button-bg-color: #333;
-  --button-text-color: #fff;
-  --button-hover-color: #444;
-  --notification-bg-color: #2a2a2a;
-    --notification-text-color: #fff;
-  --table-header-bg-color: #1e1e1e;
-}
-[data-theme="light"] {
-    --bg-color: #ffffff;
-    --text-color: #333;
-    --link-color: #555;
-  --link-hover-color: #000;
-    --input-bg-color: #eee;
-    --border-color: #ccc;
-  --button-bg-color: #ddd;
-    --button-text-color: #333;
-    --button-hover-color: #eee;
-    --notification-bg-color: #f0f0f0;
-    --notification-text-color: #333;
-      --table-header-bg-color: #eee;
-}
-</style>
+<link rel="stylesheet" href="main.css"/>
 </head>
 <body>
   <div class="top-actions">
