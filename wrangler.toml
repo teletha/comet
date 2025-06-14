@@ -6,7 +6,7 @@ compatibility_date = "2025-06-14"
 [[d1_databases]]
 binding = "DB"
 database_name = "wannyan_comment"
-database_id = "wannyan_comment"
+database_id = "e7162653-f90e-4783-876a-032839355f88"
 
 [vars]
 ADMIN_PASS = "test"
