@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="{{lang}}" data-theme="{{theme}}">
+<head>
+  <meta charset="UTF-8">
+  <title>{{comment_title}} - {{area_name}}</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/github-markdown-css/5.5.0/github-markdown.min.css" crossorigin="anonymous">
+  <style>
+    /* ...CSSはhome.htmlと同様... */
+  </style>
+</head>
+<body data-theme="{{theme}}">
+  <div class="comment-list" id="commentList">{{loading}}</div>
+  <div class="show-comment-input" id="showCommentInput">
+    <button id="showInputBtn">{{show_comment_input}}</button>
+  </div>
+  <div id="commentForm" class="form-group" style="display: none;">
+    <textarea id="newComment" placeholder="{{comment_placeholder}}"></textarea>
+    <div class="comment-action">
+      <input type="hidden" id="parentId" value="0" />
+      <div class="cf-challenge" data-sitekey="{{turnstile_sitekey}}" data-theme="{{theme}}" style="display:none;"></div>
+      <div class="tooltip">
+        <button id="submitBtn" disabled>{{submit_comment_btn}}
+          <span class="tooltiptext" id="submitTooltip">{{notification_missing_input}}</span>
+        </button>
+      </div>
+      <div class="comment-tip">{{comment_tip}}</div>
+    </div>
+  </div>
+  <div id="notificationBar" class="notification-bar hidden">
+    <span id="notificationText"></span>
+    <span id="closeNotification" class="close-btn">×</span>
+  </div>
+  <script>
+    window.onload = () => {
+      const title = "{{home_title}}"; // 変数置換される
+      document.title = title;
+      console.log("ホーム画面がロードされました");
+    };
+  </script>
+  <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+</body>
+</html>
