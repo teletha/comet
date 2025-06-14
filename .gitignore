@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.env
+.wrangler/
+wrangler-state/
+*.sqlite
+*.log
+.DS_Store
+.vscode/
+.idea/
+*.local
+*.cache

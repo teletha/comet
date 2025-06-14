@@ -1,0 +1,12 @@
+{
+  "name": "comet-cloudflare-worker",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-06-14",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "comet-db",
+      "database_id": "local"
+    }
+  ]
+}
