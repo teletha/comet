@@ -746,7 +746,7 @@ function plainTextToHtml(str: string | null | undefined): string {
         });
         }
             function sendHeight() {
-                  console.log("Sending iframe height");
+                  console.log("Sending iframe height " + document.documentElement.scrollHeight + "   ${areaKey}");
                    window.parent.postMessage({
                     type: 'iframe-resize',
                     height: document.documentElement.scrollHeight,
@@ -760,8 +760,6 @@ function plainTextToHtml(str: string | null | undefined): string {
                     const observer = new MutationObserver(sendHeight);
                      observer.observe(document.body, { childList: true, subtree: true });
                 }
-
-
         </script>
         <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
     </body>
