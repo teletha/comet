@@ -143,10 +143,9 @@ app.post("/area/:areaKey/comment", async (c) => {
 
 // 議論エリアページ
 app.get("/area/:areaKey", async (c) => {
-    const request = c.req.raw;
-    const lang = c.get("lang"); // 型が string と推論される
-    const theme = c.get("theme"); // 型が string と推論される
-    return handleCommentAreaPage(request, c.env, lang, theme);
+    const lang = c.get("lang");
+    const areaKey = c.req.param("areaKey");
+    return handleCommentAreaPage(areaKey, c.env, lang);
 });
 
 // 管理者操作 - エリア削除
@@ -176,16 +175,6 @@ app.post("/admin/reports/resolve/:reportId", async (c) => {
 // より詳細な管理者情報の取得
 app.get("/admin/extendedInfo", async (c) => {
     return handleAdminExtendedInfo(c.req.raw, c.env);
-});
-
-// 言語切り替え
-app.post("/setLang", async (c) => {
-    return handleSetLang(c.req.raw, c.env);
-});
-
-// テーマ切り替え
-app.post("/setTheme", async (c) => {
-    return handleSetTheme(c.req.raw, c.env);
 });
 
 export default app;
@@ -811,7 +800,7 @@ async function handleCreateCommentArea(request: Request, env: Env): Promise<Resp
 
     await env.DB.prepare(
         `
- INSERT INTO comment_areas (name, area_key, intro) VALUES (?, ?, ?)
+INSERT INTO comment_areas (name, area_key, intro) VALUES (?, ?, ?)
  `
     )
         .bind(name, key, intro)
@@ -821,20 +810,32 @@ async function handleCreateCommentArea(request: Request, env: Env): Promise<Resp
 }
 
 /** 単一の議論エリアページを表示する（訪問者向け、非表示の場合は403） */
-async function handleCommentAreaPage(request: Request, env: Env, lang: string, theme: string): Promise<Response> {
-    const url = new URL(request.url);
-    const areaKey = decodeURIComponent(url.pathname.replace(/^\/area\//, ""));
+async function handleCommentAreaPage(areaKey: string, env: Env, lang: string): Promise<Response> {
     const t = i18n[lang] || i18n["en"];
-    const area: CommentArea | null = await env.DB.prepare(`SELECT * FROM comment_areas WHERE area_key = ?`)
-        .bind(areaKey)
-        .first<CommentArea>();
+
+    // コメントエリアの存在チェックと自動作成
+    let area: { hidden: number } | null = await env.DB.prepare("SELECT * FROM comment_areas WHERE area_key=?").bind(areaKey).first();
 
     if (!area) {
-        return new Response(t.notification_not_found, { status: 404 }); // 翻訳文字列を使用
+        // コメントエリアが存在しない場合、自動的に作成
+        // デフォルトの名前は area_key を使用、intro は空文字列
+        try {
+            await env.DB.prepare("INSERT INTO comment_areas (name, area_key, intro, hidden) VALUES (?, ?, ?, 0)")
+                .bind(areaKey, areaKey, "")
+                .run();
+            // 新しく作成されたエリアの情報を取得し直す
+            area = await env.DB.prepare("SELECT * FROM comment_areas WHERE area_key=?").bind(areaKey).first<CommentArea>();
+        } catch (e) {
+            console.error("Failed to auto-create comment area:", e);
+            return new Response("Failed to create comment area automatically.", {
+                status: 500,
+            });
+        }
     }
-    if (area.hidden === 1) {
+
+    if (!area || area.hidden === 1) {
         // 議論エリアが非表示の場合、訪問者はアクセス不可
-        return new Response(t.notification_unauthorized, { status: 403 }); // 翻訳文字列を使用
+        return new Response(t.notification_not_found, { status: 404 }); // 翻訳文字列を使用
     }
     // 議論エリアページを表示
     const pageContent = html`<html>
@@ -844,10 +845,10 @@ async function handleCommentAreaPage(request: Request, env: Env, lang: string, t
         <body>
             <div class="comment-list" id="commentList">Loading...</div>
             <div id="commentForm">
-                <textarea id="newComment" placeholder="Write your comment"></textarea>
+                <textarea id="newComment" placeholder="${t.comment_placeholder}"></textarea>
                 <div class="cf-challenge" data-sitekey="${env.TURNSTILE_SITEKEY || ""}" data-theme="auto"></div>
                 <input type="hidden" id="parentId" value="0" />
-                <button id="submitBtn" disabled>Submit</button>
+                <button id="submitBtn" disabled>${t.submit_comment_btn}</button>
             </div>
 
             <!-- 通知バー -->
@@ -1086,8 +1087,6 @@ async function handleCommentAreaPage(request: Request, env: Env, lang: string, t
 
                 // 最初のコメントのロード
                 loadComments();
-                // テーマ設定
-                document.documentElement.setAttribute("data-theme", "${theme}");
 
                 /**
                  * This script runs only if the current page is loaded inside an iframe.
@@ -1104,12 +1103,11 @@ async function handleCommentAreaPage(request: Request, env: Env, lang: string, t
                             {
                                 type: "iframe-resize",
                                 height: document.documentElement.scrollHeight,
-                                id: "${areaKey}",
+                                id: "comet-frame",
                             },
                             "*"
                         );
                     }
-
                     new MutationObserver(sendHeight).observe(document.body, { childList: true, subtree: true, attributes: true });
                 }
             </script>
@@ -1321,58 +1319,4 @@ async function handleResolveReport(reportId: number, request: Request, env: Env)
     }
     await env.DB.prepare("UPDATE reports SET resolved=1 WHERE id=?").bind(reportId).run();
     return new Response("OK", { status: 200 });
-}
-/** 言語切り替えを処理する */
-async function handleSetLang(request: Request, env: Env): Promise<Response> {
-    try {
-        const data: { lang?: string } = await request.json();
-        const lang = data.lang || "en"; // デフォルトは英語
-        const res = new Response(JSON.stringify({ success: true }), {
-            headers: {
-                "Content-Type": "application/json;charset=UTF-8",
-                "Access-Control-Allow-Origin": "*",
-                "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-                "Access-Control-Allow-Headers": "Content-Type",
-            },
-        });
-        setCookie("lang", lang, res);
-        return res;
-    } catch (err: any) {
-        return new Response(JSON.stringify({ success: false, message: err.message }), {
-            status: 400,
-            headers: {
-                "Content-Type": "application/json;charset=UTF-8",
-                "Access-Control-Allow-Origin": "*",
-                "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-                "Access-Control-Allow-Headers": "Content-Type",
-            },
-        });
-    }
-}
-/** テーマ切り替えを処理する */
-async function handleSetTheme(request: Request, env: Env): Promise<Response> {
-    try {
-        const data: { theme?: string } = await request.json();
-        const theme = data.theme || "dark"; // デフォルトはダークテーマ
-        const res = new Response(JSON.stringify({ success: true }), {
-            headers: {
-                "Content-Type": "application/json;charset=UTF-8",
-                "Access-Control-Allow-Origin": "*",
-                "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-                "Access-Control-Allow-Headers": "Content-Type",
-            },
-        });
-        setCookie("theme", theme, res);
-        return res;
-    } catch (err: any) {
-        return new Response(JSON.stringify({ success: false, message: err.message }), {
-            status: 400,
-            headers: {
-                "Content-Type": "application/json;charset=UTF-8",
-                "Access-Control-Allow-Origin": "*",
-                "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-                "Access-Control-Allow-Headers": "Content-Type",
-            },
-        });
-    }
 }
