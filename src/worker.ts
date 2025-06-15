@@ -158,16 +158,6 @@ app.post("/area/:areaKey/comment", async (c) => {
   return handlePostComment(c.req.raw, c.env);
 });
 
-// コメントレポート
-app.post("/area/:areaKey/comment/:commentId/report", async (c) => {
-  return handleReportComment(c.req.raw, c.env);
-});
-
-// コメントいいね (削除済みであればこのルートも不要)
-app.post("/area/:areaKey/comment/:commentId/like", async (c) => {
-  return handleLikeComment(c.req.raw, c.env);
-});
-
 // 管理者操作 - エリア削除
 app.post("/admin/area/:areaKey/delete", async (c) => {
   const areaKey = c.req.param("areaKey");
@@ -349,17 +339,12 @@ async function handleEmbedCommentArea(
           .reply-item {
             margin-left: 20px;
           }
-          .reply-btn,
-          .report-btn,
-          .like-btn {
+          .reply-btn {
             margin-left: 10px;
             color: var(--hint-color);
             cursor: pointer;
             font-size: 12px;
             display: inline-block;
-          }
-          .like-btn.liked {
-            color: var(--link-color);
           }
           .reply-box {
             margin-top: 5px;
@@ -647,19 +632,9 @@ async function handleEmbedCommentArea(
                         <small style="color:#777;">\${
                           comment.created_at || ""
                         }</small>
-                            <span class="reply-btn" data-comment-id="\${
-                              comment.id
-                            }"  style="text-decoration: none;">${t.reply_btn}</span>
-                        <span class="report-btn" onclick="reportComment(\${
+                        <span class="reply-btn" data-comment-id="\${
                           comment.id
-                        })" style="text-decoration: none;">${t.report_comment}</span>
-                        <span class="like-btn" data-comment-id="\${
-                          comment.id
-                        }" onclick="likeComment(\${
-              comment.id
-            })" style="text-decoration: none;">\${
-              comment.liked ? "${t.liked}" : "${t.like}"
-            }\${comment.likes > 0 ? \`(\${comment.likes})\` : ""}</span>
+                        }" style="text-decoration: none;">${t.reply_btn}</span>    
                         \${
                           authed
                             ? \`<span onclick="toggleHideComment(\${
@@ -870,49 +845,7 @@ async function handleEmbedCommentArea(
               );
             }
           });
-          // コメントに「いいね」
-          window.likeComment = async (commentId) => {
-            const res = await fetch(
-              "/area/${areaKey}/comment/" + commentId + "/like",
-              { method: "POST" }
-            );
-            if (res.ok) {
-              // ローカルで更新
-              const index = comments.findIndex((c) => c.id === commentId);
-              if (index !== -1) {
-                comments[index].liked = !comments[index].liked;
-                comments[index].likes = comments[index].liked
-                  ? comments[index].likes + 1
-                  : comments[index].likes - 1;
-              }
-              renderComments(comments);
-            } else {
-              showNotification(
-                "${t.notification_toggle_failed}：" + (await res.text())
-              );
-            }
-          };
-          // コメントをレポート
-          window.reportComment = async (commentId) => {
-            const reason = prompt("${t.report_comment}:");
-            if (!reason) return;
-            const formData = new FormData();
-            formData.append("reason", reason);
-            const res = await fetch(
-              "/area/${areaKey}/comment/" + commentId + "/report",
-              {
-                method: "POST",
-                body: formData,
-              }
-            );
-            if (res.ok) {
-              showNotification("${t.notification_report_success}");
-            } else {
-              showNotification(
-                "${t.notification_report_failed}：" + (await res.text())
-              );
-            }
-          };
+
           loadComments();
           // テーマと言語の初期化
           document.documentElement.setAttribute("data-theme", "${theme}");
@@ -1784,17 +1717,12 @@ async function handleCommentAreaPage(
           .reply-item {
             margin-left: 20px;
           }
-          .reply-btn,
-          .report-btn,
-          .like-btn {
+          .reply-btn {
             margin-left: 10px;
             color: var(--hint-color);
             cursor: pointer;
             font-size: 12px;
             display: inline-block;
-          }
-          .like-btn.liked {
-            color: var(--link-color);
           }
           .reply-box {
             margin-top: 5px;
@@ -2095,92 +2023,37 @@ async function handleCommentAreaPage(
             }
             const tree = buildCommentTree(comments);
             tree.forEach((comment) => {
-              commentList.appendChild(renderCommentItem(comment));
+              if (comment.hidden !== 1) {
+                commentList.appendChild(renderCommentItem(comment));
+              }
             });
           }
           function renderCommentItem(comment) {
             const div = document.createElement("div");
             div.className =
               "comment-item" + (comment.parent_id ? " reply-item" : "");
-            // コメントが非表示の場合
-            if (comment.hidden === 1) {
-              // 管理者は原文を直接閲覧可能、一般ユーザーはデフォルトで折りたたまれる
-              if (authed) {
-                // 管理者ビュー: 原文と「非表示/復元」操作が表示される
-                div.innerHTML = \`
-         <div class="markdown-content markdown-body" style="border-left:2px solid #444; padding-left:8px;">
-         [${t.comment_hidden}，${t.admin_panel_title}]<br/>
-             \${comment.html_content}
-         </div>
-         <small style="color:#777;">\${comment.created_at || ""}</small>
-     <span class="reply-btn" data-comment-id="\${
-       comment.id
-     }" style="text-decoration: none;">${t.reply_btn}</span>
-         <span class="report-btn" onclick="reportComment(\${
-           comment.id
-         })" style="text-decoration: none;">${t.report_comment}</span>
-     <span onclick="toggleHideComment(\${
-       comment.id
-     })"  style="text-decoration: none;display: inline-block;cursor: pointer; margin-left: 10px;">
-             ${t.unhide}
-     </span>
-     \`;
-              } else {
-                // 一般ユーザー: 「このコメントは非表示です」のみ表示され、「表示」をクリックすると展開される
-                div.innerHTML = \`
-             <div class="hidden-comment-placeholder">
-                 ${t.comment_hidden}
-                   <span class="show-btn" onclick="toggleHiddenContent(this, \${
-                     comment.id
-                   })">${t.view_comment}</span>
-             </div>
-         <div class="hidden-content" style="display:none;">
-                 <div class="markdown-content markdown-body">\${
-                   comment.html_content
-                 }</div>
-             <small style="color:#777;">\${comment.created_at || ""}</small>
-             <span class="reply-btn" data-comment-id="\${
-               comment.id
-             }" style="text-decoration: none;">${t.reply_btn}</span>
-             <span class="report-btn" onclick="reportComment(\${
-               comment.id
-             })" style="text-decoration: none;">${t.report_comment}</span>
-         </div>
-         \`;
-              }
-            } else {
-              // 非表示ではない
-              div.innerHTML = \`
-         <div class="markdown-content markdown-body">\${
-           comment.html_content
-         }</div>
-             <small style="color:#777;">\${comment.created_at || ""}</small>
-             <span class="reply-btn" data-comment-id="\${
-               comment.id
-             }" style="text-decoration: none;">${t.reply_btn}</span>
-             <span class="report-btn" onclick="reportComment(\${
-               comment.id
-             })" style="text-decoration: none;">${t.report_comment}</span>
-             <span class="like-btn" data-comment-id="\${
-               comment.id
-             }" onclick="likeComment(\${
-                comment.id
-              })" style="text-decoration: none;">\${
-                comment.liked ? "${t.liked}" : "${t.like}"
-              }\${comment.likes > 0 ? \`(\${comment.likes})\` : ""}</span>
-             \${
-               authed
-                 ? \`<span onclick="toggleHideComment(\${
-                     comment.id
-                   })" style="text-decoration: none;display: inline-block;cursor: pointer; margin-left: 10px;">${t.hide}</span>  <span onclick="togglePinComment(\${
-                     comment.id
-                   })" style="text-decoration: none;display: inline-block;cursor: pointer; margin-left: 10px;">\${
-                     comment.pinned ? "${t.unhide}" : "${t.hide}"
-                   }</span>\`
-                 : ""
-             }
-     \`;
-            }
+            div.innerHTML = \`
+              <div class="markdown-content markdown-body">\${
+                comment.html_content
+              }</div>
+                  <small style="color:#777;">\${
+                    comment.created_at || ""
+                  }</small>
+                  <span class="reply-btn" data-comment-id="\${
+                    comment.id
+                  }" style="text-decoration: none;">${t.reply_btn}</span>
+                  \${
+                    authed
+                      ? \`<span onclick="toggleHideComment(\${
+                          comment.id
+                        })" style="text-decoration: none;display: inline-block;cursor: pointer; margin-left: 10px;">${t.hide}</span>  <span onclick="togglePinComment(\${
+                          comment.id
+                        })" style="text-decoration: none;display: inline-block;cursor: pointer; margin-left: 10px;">\${
+                          comment.pinned ? "${t.unhide}" : "${t.hide}"
+                        }</span>\`
+                      : ""
+                  }
+          \`;
             // 子返信がある場合
             if (comment.replies && comment.replies.length > 0) {
               comment.replies.forEach((r) => {
@@ -2377,53 +2250,11 @@ async function handleCommentAreaPage(
               }, 100);
             } else {
               showNotification(
-                "${t.notification_comment_submit_failed}：" + (await res.text())
-              );
-            }
-          });
-          // コメントに「いいね」
-          window.likeComment = async (commentId) => {
-            const res = await fetch(
-              location.pathname + "/comment/" + commentId + "/like",
-              { method: "POST" }
-            );
-            if (res.ok) {
-              // ローカルで更新
-              const index = comments.findIndex((c) => c.id === commentId);
-              if (index !== -1) {
-                comments[index].liked = !comments[index].liked;
-                comments[index].likes = comments[index].liked
-                  ? comments[index].likes + 1
-                  : comments[index].likes - 1;
-              }
-              renderComments(comments);
-            } else {
-              showNotification(
                 "${t.notification_toggle_failed}：" + (await res.text())
               );
             }
           };
-          // コメントをレポート
-          window.reportComment = async (commentId) => {
-            const reason = prompt("${t.report_comment}:");
-            if (!reason) return;
-            const formData = new FormData();
-            formData.append("reason", reason);
-            const res = await fetch(
-              location.pathname + "/comment/" + commentId + "/report",
-              {
-                method: "POST",
-                body: formData,
-              }
-            );
-            if (res.ok) {
-              showNotification("${t.notification_report_success}");
-            } else {
-              showNotification(
-                "${t.notification_report_failed}：" + (await res.text())
-              );
-            }
-          };
+
 
           // 最初のコメントのロード
           loadComments();
@@ -2539,7 +2370,6 @@ async function handleGetComments(
   // 各コメントにhtml_contentフィールドを追加する（Markdownレンダリング用）
   list.forEach((c: Comment) => {
     c.html_content = c.content;
-    c.liked = false;
   });
   return new Response(JSON.stringify(list), {
     status: 200,
@@ -2639,64 +2469,7 @@ async function handlePostComment(
 
   return new Response("OK", { status: 200 });
 }
-/** コメントを「いいね」する */
-async function handleLikeComment(
-  request: Request,
-  env: Env
-): Promise<Response> {
-  const match = request.url.match(/\/comment\/(\d+)\/like$/);
-  if (!match) {
-    return new Response("Invalid", { status: 400 });
-  }
-  const commentId = parseInt(match[1], 10);
-  // コメントが存在するかチェック
-  const comment: { likes: number } | null = await env.DB.prepare(
-    "SELECT likes FROM comments WHERE id=?"
-  )
-    .bind(commentId)
-    .first<{ likes: number }>();
-  if (!comment) {
-    return new Response("Comment does not exist", { status: 404 });
-  }
-  const newLikes = (comment.likes || 0) + 1;
-  await env.DB.prepare("UPDATE comments SET likes=? WHERE id=?")
-    .bind(newLikes, commentId)
-    .run();
-  return new Response("OK", { status: 200 });
-}
-/** コメントをレポートする */
-async function handleReportComment(
-  request: Request,
-  env: Env
-): Promise<Response> {
-  const match = new URL(request.url).pathname.match(
-    /\/comment\/(\d+)\/report$/
-  );
-  if (!match) {
-    return new Response("Invalid", { status: 400 });
-  }
-  const commentId = parseInt(match[1], 10);
-  const formData = await request.formData();
-  const reason = String(formData.get("reason") || "");
 
-  if (!reason) {
-    return new Response("Missing report reason", { status: 400 });
-  }
-  // コメントが存在するかチェック
-  const comment: { id: number } | null = await env.DB.prepare(
-    "SELECT id FROM comments WHERE id=?"
-  )
-    .bind(commentId)
-    .first<{ id: number }>();
-  if (!comment) {
-    return new Response("Comment does not exist", { status: 404 });
-  }
-  // レポートを書き込む
-  await env.DB.prepare("INSERT INTO reports (comment_id, reason) VALUES (?, ?)")
-    .bind(commentId, reason)
-    .run();
-  return new Response("OK", { status: 200 });
-}
 /** 議論エリアを削除する (管理者) */
 async function handleDeleteArea(
   areaKeyEncoded: string,
