@@ -1606,7 +1606,7 @@ async function handleCommentAreaPage(request: Request, env: Env, lang: string, t
                  * ・Turnstile の sitekey は env.TURNSTILE_SITEKEY によって動的に設定される。
                  */
                 function initTurnstile() {
-                    let e = $(".cf-challenge").empty().show(true).nodes[0];
+                    let e = challenge.empty().show(true).nodes[0];
                     let render = () => {
                         turnstile.render(e, {
                             sitekey: "${env.TURNSTILE_SITEKEY}",
