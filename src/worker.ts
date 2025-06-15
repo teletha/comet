@@ -1548,48 +1548,50 @@ async function handleCommentAreaPage(request: Request, env: Env, lang: string, t
 
                 newCommentInput.addEventListener("input", checkFormValidity);
                 cfChallenge.addEventListener("DOMSubtreeModified", checkFormValidity);
-                // コメント入力の表示
-                // Turnstileの初期化
-                const challengeDiv = document.querySelector(".cf-challenge");
-                challengeDiv.innerHTML = "";
-                challengeDiv.style.display = "block";
-                if (window.turnstile) {
-                    turnstile.render(challengeDiv, {
-                        sitekey: "${env.TURNSTILE_SITEKEY || ""}",
-                        theme: "auto",
-                    });
-                } else {
-                    document.addEventListener("turnstile-ready", () => {
-                        turnstile.render(challengeDiv, {
-                            sitekey: "${env.TURNSTILE_SITEKEY || ""}",
+
+                /**
+                 * Turnstile CAPTCHA を初期化する関数。
+                 *
+                 * ・class="cf-challenge" を持つ要素を対象に CAPTCHA をレンダリングする。
+                 * ・window.turnstile が存在する場合は即座に描画を行う。
+                 * ・まだ読み込まれていない場合は "turnstile-ready" イベントを待ってから描画する。
+                 * ・レンダリング前に innerHTML を空にし、表示を block にする。
+                 *
+                 * 注意点:
+                 * ・.cf-challenge 要素が複数存在する場合は最初の1つのみが対象となる。
+                 * ・同じ要素に対して複数回 render() するとエラーになるため、事前にクリアしている。
+                 * ・Turnstile の sitekey は env.TURNSTILE_SITEKEY によって動的に設定される。
+                 */
+                function initTurnstile() {
+                    let e = $(".cf-challenge").empty().css({ display: "block" }).nodes[0];
+                    let render = () => {
+                        turnstile.render(e, {
+                            sitekey: "${env.TURNSTILE_SITEKEY}",
                             theme: "auto",
                         });
-                    });
+                    };
+
+                    if (window.turnstile) {
+                        render();
+                    } else {
+                        document.addEventListener("turnstile-ready", render, { once: true });
+                    }
                 }
 
-                // 返信を開始
-                document.addEventListener("click", (e) => {
-                    if (e.target && e.target.classList.contains("reply-btn")) {
-                        const commentId = e.target.dataset.commentId;
-                        document.getElementById("parentId").value = commentId;
-                        document.getElementById("newComment").focus();
-                        // Turnstileの初期化
-                        const challengeDiv = document.querySelector(".cf-challenge");
-                        challengeDiv.innerHTML = "";
-                        challengeDiv.style.display = "block";
-                        if (window.turnstile) {
-                            turnstile.render(challengeDiv, {
-                                sitekey: "${env.TURNSTILE_SITEKEY || ""}",
-                                theme: "auto",
-                            });
-                        } else {
-                            document.addEventListener("turnstile-ready", () => {
-                                turnstile.render(challengeDiv, {
-                                    sitekey: "${env.TURNSTILE_SITEKEY || ""}",
-                                    theme: "auto",
-                                });
-                            });
-                        }
+                /**
+                 * コメントフォームで Cloudflare Turnstile CAPTCHA を初期化し、
+                 * 「返信」ボタンが押されたときに対象コメントへ返信できるようにする処理。
+                 *
+                 * - ページ読み込み直後に CAPTCHA を表示
+                 * - 返信ボタンをクリックすると hidden input に親コメントIDを設定し、
+                 *   コメント入力欄にフォーカスして CAPTCHA を再初期化する
+                 */
+                initTurnstile();
+                $(document).click((e) => {
+                    if ($(e.target).has("reply-btn")) {
+                        $("#parentId").value(e.target.dataset.commentId);
+                        $("#newComment").nodes[0].focus();
+                        initTurnstile();
                     }
                 });
 
