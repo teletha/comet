@@ -1446,24 +1446,11 @@ async function handleCommentAreaPage(request: Request, env: Env, lang: string, t
             <link rel="stylesheet" href="/main.css" />
         </head>
         <body>
-            <div class="hint">${area.intro || ""}</div>
-
-            <div class="show-comment-input" id="showCommentInput">
-                <button id="showInputBtn">${t.show_comment_input}</button>
-            </div>
-            <div id="commentForm" class="form-group" style="display: none;">
-                <textarea id="newComment" placeholder="${t.comment_placeholder}"></textarea>
-                <div class="comment-action">
-                    <input type="hidden" id="parentId" value="0" />
-                    <div class="cf-challenge" data-sitekey="${env.TURNSTILE_SITEKEY || ""}" data-theme="auto" style="display:none;"></div>
-                    <div class="tooltip">
-                        <button id="submitBtn" disabled>
-                            ${t.submit_comment_btn}
-                            <span class="tooltiptext" id="submitTooltip">${t.notification_missing_input}</span>
-                        </button>
-                    </div>
-                    <div class="comment-tip">${t.comment_tip}</div>
-                </div>
+            <div id="commentForm">
+                <textarea id="newComment" placeholder="Write your comment"></textarea>
+                <div class="cf-challenge" data-sitekey="${env.TURNSTILE_SITEKEY || ""}" data-theme="auto"></div>
+                <input type="hidden" id="parentId" value="0" />
+                <button id="submitBtn" disabled>${t.submit_comment_btn}</button>
             </div>
 
             <div class="comment-list" id="commentList">${t.loading}</div>
@@ -1558,54 +1545,43 @@ async function handleCommentAreaPage(request: Request, env: Env, lang: string, t
                 // 入力ボックスを監視
                 const newCommentInput = document.getElementById("newComment");
                 const submitButton = document.getElementById("submitBtn");
-                const submitTooltip = document.getElementById("submitTooltip");
                 const cfChallenge = document.querySelector(".cf-challenge");
                 function checkFormValidity() {
                     if (newCommentInput.value.trim() && cfChallenge.querySelector('[name="cf-turnstile-response"]')?.value) {
                         submitButton.disabled = false;
-                        submitTooltip.style.visibility = "hidden";
+                        cfChallenge.style.display = "none";
                     } else {
                         submitButton.disabled = true;
-                        submitTooltip.style.visibility = "visible";
-                        if (!newCommentInput.value.trim()) {
-                            submitTooltip.textContent = "${t.notification_comment_missing_content}";
-                        } else if (!cfChallenge.querySelector('[name="cf-turnstile-response"]')?.value) {
-                            submitTooltip.textContent = "${t.turnstile_verification_required}";
-                        }
+                        cfChallenge.style.display = "block";
                     }
                 }
 
                 newCommentInput.addEventListener("input", checkFormValidity);
                 cfChallenge.addEventListener("DOMSubtreeModified", checkFormValidity);
                 // コメント入力の表示
-                document.getElementById("showInputBtn").addEventListener("click", () => {
-                    document.getElementById("commentForm").style.display = "flex";
-                    document.getElementById("showCommentInput").style.display = "none";
-                    // Turnstileの初期化
-                    const challengeDiv = document.querySelector(".cf-challenge");
-                    challengeDiv.innerHTML = "";
-                    challengeDiv.style.display = "block";
-                    if (window.turnstile) {
+                // Turnstileの初期化
+                const challengeDiv = document.querySelector(".cf-challenge");
+                challengeDiv.innerHTML = "";
+                challengeDiv.style.display = "block";
+                if (window.turnstile) {
+                    turnstile.render(challengeDiv, {
+                        sitekey: "${env.TURNSTILE_SITEKEY || ""}",
+                        theme: "auto",
+                    });
+                } else {
+                    document.addEventListener("turnstile-ready", () => {
                         turnstile.render(challengeDiv, {
                             sitekey: "${env.TURNSTILE_SITEKEY || ""}",
                             theme: "auto",
                         });
-                    } else {
-                        document.addEventListener("turnstile-ready", () => {
-                            turnstile.render(challengeDiv, {
-                                sitekey: "${env.TURNSTILE_SITEKEY || ""}",
-                                theme: "auto",
-                            });
-                        });
-                    }
-                });
+                    });
+                }
+
                 // 返信を開始
                 document.addEventListener("click", (e) => {
                     if (e.target && e.target.classList.contains("reply-btn")) {
                         const commentId = e.target.dataset.commentId;
                         document.getElementById("parentId").value = commentId;
-                        document.getElementById("commentForm").style.display = "flex";
-                        document.getElementById("showCommentInput").style.display = "none";
                         document.getElementById("newComment").focus();
                         // Turnstileの初期化
                         const challengeDiv = document.querySelector(".cf-challenge");

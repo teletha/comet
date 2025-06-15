@@ -8,7 +8,6 @@ body {
     line-height: 1.4;
     color: var(--comment-text-color);
     margin-top: 20px;
-    padding: 10px;
 }
 
 .comment {
@@ -33,106 +32,52 @@ body {
     display: inline-block;
 }
 
-.form-group {
-    display: flex;
-    flex-direction: row;
-    align-items: flex-start;
-    margin: 20px 0;
+#commentForm {
+    position : relative;
 }
 
-.form-group textarea {
+#commentForm textarea {
     background: var(--input-bg-color);
     color: var(--text-color);
     border: 1px solid var(--border-color);
     padding: 8px;
     width: 100%;
-    height: 60px;
+    min-height: 100px;
     resize: vertical;
     margin-bottom: 10px;
     font-size: 14px;
 }
 
-.form-group .comment-action {
-    display: flex;
-    flex-direction: column;
-    justify-content: flex-end;
-    align-items: flex-end;
+#commentForm .cf-challenge {
+    position: absolute;
+    top: 1;
+    right: 0;
 }
 
-.form-group button {
+#commentAction {
+    display:flex;
+    height: 65px;
+}
+
+#commentForm button {
     background: var(--button-bg-color);
     color: var(--button-text-color);
     border: none;
     padding: 6px 10px;
     cursor: pointer;
     border-radius: 3px;
-    transition: background 0.3s ease, transform 0.2s ease;
-    margin-left: 5px;
     font-size: 12px;
     white-space: nowrap;
 }
 
-.form-group button:hover {
-    background: var(--button-hover-color);
-    transform: scale(1.02);
-}
-
-.form-group button[disabled] {
+#commentForm button[disabled] {
     background: #ddd;
-    /* 禁用状態時の背景色 */
     color: #999;
-    /* 禁用状態時の文字色 */
     cursor: not-allowed;
-    /* 禁用状態時のマウスカーソル */
 }
 
-.form-group button[disabled]:hover {
-    background: #ddd;
-    /* 禁用状態時の背景色 */
-    color: #999;
-    /* 禁用状態時の文字色 */
-    transform: none;
-}
 
-.comment-tip {
-    font-size: 0.8em;
-    color: var(--hint-color);
-    margin-top: 5px;
-    white-space: nowrap;
-}
 
-.cf-challenge {
-    margin-bottom: 10px;
-}
-
-/* ツールチップ */
-.tooltip {
-    position: relative;
-    display: inline-block;
-}
-
-.tooltip .tooltiptext {
-    visibility: hidden;
-    background-color: var(--hint-color);
-    color: var(--text-color);
-    text-align: center;
-    border-radius: 6px;
-    padding: 5px;
-    position: absolute;
-    z-index: 1;
-    bottom: 125%;
-    left: 50%;
-    margin-left: -60px;
-    font-size: 0.8em;
-    white-space: nowrap;
-    opacity: 0;
-    transition: opacity 0.3s;
-}
-
-.tooltip:hover .tooltiptext {
-    visibility: visible;
-    opacity: 1;
-}
 
 .notification-bar {
     position: fixed;
@@ -159,42 +104,6 @@ body {
     font-weight: bold;
 }
 
-/* 隠されたコメントの場合、プレースホルダー/ボタンのみ表示 */
-.hidden-comment-placeholder {
-    font-style: italic;
-    color: var(--hint-color);
-}
-
-.show-btn {
-    color: var(--link-color);
-    margin-left: 8px;
-    cursor: pointer;
-}
-
-.show-btn:hover {
-    text-decoration: underline;
-}
-
-.show-comment-input {
-    margin-top: 10px;
-    text-align: left;
-}
-
-.show-comment-input button {
-    background: var(--button-bg-color);
-    color: var(--button-text-color);
-    border: none;
-    padding: 8px 12px;
-    cursor: pointer;
-    border-radius: 3px;
-    transition: background 0.3s ease, transform 0.2s ease;
-    margin-bottom: 10px;
-}
-
-.show-comment-input button:hover {
-    background: var(--button-hover-color);
-    transform: scale(1.02);
-}
 
 /* 深色・浅色テーマ */
 :root {
