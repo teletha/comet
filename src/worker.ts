@@ -1109,10 +1109,8 @@ async function handleCommentAreaPage(request: Request, env: Env, lang: string, t
                             "*"
                         );
                     }
-                    window.onload = function () {
-                        sendHeight();
-                        new MutationObserver(sendHeight).observe(document.body, { childList: true, subtree: true });
-                    };
+
+                    new MutationObserver(sendHeight).observe(document.body, { childList: true, subtree: true, attributes: true });
                 }
             </script>
             <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>

@@ -42,7 +42,7 @@
     border: 1px solid var(--border-color);
     padding: 8px;
     width: 100%;
-    min-height: 100px;
+    min-height: 130px;
     resize: vertical;
     margin-bottom: 10px;
     font-size: 14px;
@@ -50,14 +50,10 @@
 
 #commentForm .cf-challenge {
     position: absolute;
-    top: 1;
+    bottom: 42px;
     right: 0;
     display: block;
-}
-
-#commentAction {
-    display:flex;
-    height: 65px;
+    opacity: 0.8;
 }
 
 #commentForm button {
@@ -69,6 +65,7 @@
     border-radius: 3px;
     font-size: 12px;
     white-space: nowrap;
+    height: 32px
 }
 
 #commentForm button[disabled] {
@@ -76,9 +73,6 @@
     color: #999;
     cursor: not-allowed;
 }
-
-
-
 
 .notification-bar {
     position: fixed;
