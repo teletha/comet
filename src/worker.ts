@@ -153,11 +153,6 @@ app.get("/area/:areaKey", async (c) => {
   return handleCommentAreaPage(request, c.env, lang, theme);
 });
 
-// コメント投稿
-app.post("/area/:areaKey/comment", async (c) => {
-  return handlePostComment(c.req.raw, c.env);
-});
-
 // 管理者操作 - エリア削除
 app.post("/admin/area/:areaKey/delete", async (c) => {
   const areaKey = c.req.param("areaKey");
@@ -180,12 +175,6 @@ app.post("/admin/comment/:commentId/togglePin", async (c) => {
 app.post("/admin/reports/resolve/:reportId", async (c) => {
   const reportId = parseInt(c.req.param("reportId"), 10);
   return handleResolveReport(reportId, c.req.raw, c.env);
-});
-
-// 管理者操作 - コメント非表示切り替え
-app.post("/admin/comment/:commentId/toggleHide", async (c) => {
-  const commentId = parseInt(c.req.param("commentId"), 10);
-  return handleToggleHideComment(commentId, c.req.raw, c.env);
 });
 
 // より詳細な管理者情報の取得
@@ -339,12 +328,17 @@ async function handleEmbedCommentArea(
           .reply-item {
             margin-left: 20px;
           }
-          .reply-btn {
+          .reply-btn,
+          .report-btn,
+          .like-btn {
             margin-left: 10px;
             color: var(--hint-color);
             cursor: pointer;
             font-size: 12px;
             display: inline-block;
+          }
+          .like-btn.liked {
+            color: var(--link-color);
           }
           .reply-box {
             margin-top: 5px;
@@ -635,17 +629,6 @@ async function handleEmbedCommentArea(
                         <span class="reply-btn" data-comment-id="\${
                           comment.id
                         }" style="text-decoration: none;">${t.reply_btn}</span>    
-                        \${
-                          authed
-                            ? \`<span onclick="toggleHideComment(\${
-                                comment.id
-                              })" style="text-decoration: none;display: inline-block;cursor: pointer; margin-left: 10px;">${t.hide}</span>  <span onclick="togglePinComment(\${
-                                comment.id
-                              })"  style="text-decoration: none;display: inline-block;cursor: pointer; margin-left: 10px;">\${
-                                comment.pinned ? "${t.unhide}" : "${t.hide}"
-                              }</span>\`
-                            : ""
-                        }
                 \`;
 
             // 子返信がある場合
@@ -657,39 +640,6 @@ async function handleEmbedCommentArea(
             return div;
           }
 
-          // フロントエンドで「非表示」コメントの表示/折りたたみ
-          window.toggleHiddenContent = (trigger, commentId) => {
-            const wrapper = trigger.closest(
-              ".hidden-comment-placeholder"
-            ).nextElementSibling;
-            if (!wrapper) return;
-            const isHidden = wrapper.style.display === "none";
-            wrapper.style.display = isHidden ? "block" : "none";
-            trigger.textContent = isHidden
-              ? "${t.collapse_comment}"
-              : "${t.view_comment}";
-          };
-
-          // 個別コメントの非表示切り替え（管理者のみ）
-          window.toggleHideComment = async (commentId) => {
-            const res = await fetch(
-              "/admin/comment/" + commentId + "/toggleHide",
-              { method: "POST" }
-            );
-            if (res.ok) {
-              showNotification("${t.notification_comment_hidden_toggle}");
-              // ローカルで更新
-              const index = comments.findIndex((c) => c.id === commentId);
-              if (index !== -1) {
-                comments[index].hidden = comments[index].hidden === 1 ? 0 : 1;
-              }
-              renderComments(comments);
-            } else {
-              showNotification(
-                "${t.notification_toggle_failed}：" + (await res.text())
-              );
-            }
-          };
           // 個別コメントのピン留め切り替え（管理者のみ）
           window.togglePinComment = async (commentId) => {
             const res = await fetch(
@@ -1375,9 +1325,6 @@ async function handleHomePage(
          ? ""
          : \`<span onclick="resolveReport(\${r.id})" style="text-decoration: none;display: inline-block;cursor: pointer; margin-left: 10px;">${t.resolve_report}</span>\`
      }
-     <span onclick="toggleHideComment(\${
-       r.comment_id
-     })" style="text-decoration: none;display: inline-block;cursor: pointer; margin-left: 10px;">${t.toggle_hide_comment}</span>
      </td>
  </tr>
  \`;
@@ -1404,21 +1351,6 @@ async function handleHomePage(
             }
           }
 
-          // 個別コメントの非表示切り替え
-          async function toggleHideComment(commentId) {
-            const res = await fetch(
-              "/admin/comment/" + commentId + "/toggleHide",
-              { method: "POST" }
-            );
-            if (res.ok) {
-              showNotification("${t.notification_comment_hidden_toggle}");
-              await fetchExtendedInfo();
-            } else {
-              showNotification(
-                "${t.notification_toggle_failed}：" + (await res.text())
-              );
-            }
-          }
           // 個別コメントのピン留め状態を切り替える
           async function togglePinComment(commentId) {
             const res = await fetch(
@@ -1673,366 +1605,360 @@ async function handleCommentAreaPage(
     return new Response(t.notification_unauthorized, { status: 403 }); // 翻訳文字列を使用
   }
   // 議論エリアページを表示
-  const pageContent = html` <!DOCTYPE html>
-    <html lang="${lang}" data-theme="${theme}">
-      <head>
-        <meta charset="UTF-8" />
-        <title>${area.name}</title>
-        <meta name="viewport" content="width=device-width,initial-scale=1.0" />
-        <link
-          rel="stylesheet"
-          href="https://cdnjs.cloudflare.com/ajax/libs/github-markdown-css/5.5.0/github-markdown.min.css"
-          crossorigin="anonymous"
-        />
-        <style>
-          body {
-            background: var(--bg-color);
-            color: var(--text-color);
-            font-family: sans-serif;
-            max-width: 800px;
-            margin: 40px auto;
-            padding: 20px;
-          }
-          a {
-            color: var(--link-color);
-            text-decoration: none;
-          }
-          a:hover {
-            color: var(--link-hover-color);
-          }
-          .hint {
-            color: var(--hint-color);
-            margin-bottom: 10px;
-          }
-          .comment-list {
-            margin-top: 20px;
-          }
-          .comment-item {
-            margin-bottom: 15px;
-            padding: 10px;
-            background: var(--comment-bg-color);
-            border-radius: 4px;
-            /* border: 1px solid var(--border-color); */
-          }
-          .reply-item {
-            margin-left: 20px;
-          }
-          .reply-btn {
-            margin-left: 10px;
-            color: var(--hint-color);
-            cursor: pointer;
-            font-size: 12px;
-            display: inline-block;
-          }
-          .reply-box {
-            margin-top: 5px;
-          }
-          .markdown-content {
-            font-size: 14px;
-            color: var(--comment-text-color);
-          }
-          .form-group {
-            display: flex;
-            flex-direction: row;
-            align-items: flex-start;
-            margin: 20px 0;
-          }
-          .form-group textarea {
-            background: var(--input-bg-color);
-            color: var(--text-color);
-            border: 1px solid var(--border-color);
-            padding: 8px;
-            width: 100%;
-            height: 60px;
-            resize: vertical;
-            margin-bottom: 10px;
-            font-size: 14px;
-          }
-          .form-group .comment-action {
-            display: flex;
-            flex-direction: column;
-            justify-content: flex-end;
-            align-items: flex-end;
-          }
-          .form-group button {
-            background: var(--button-bg-color);
-            color: var(--button-text-color);
-            border: none;
-            padding: 6px 10px;
-            cursor: pointer;
-            border-radius: 3px;
-            transition: background 0.3s ease, transform 0.2s ease;
-            margin-left: 5px;
-            font-size: 12px;
-            white-space: nowrap;
-          }
-          .form-group button:hover {
-            background: var(--button-hover-color);
-            transform: scale(1.02);
-          }
-          .form-group button[disabled] {
-            background: #ddd; /* 禁用状態時の背景色 */
-            color: #999; /* 禁用状態時の文字色 */
-            cursor: not-allowed; /* 禁用状態時のマウスカーソル */
-          }
-          .form-group button[disabled]:hover {
-            background: #ddd; /* 禁用状態時の背景色 */
-            color: #999; /* 禁用状態時の文字色 */
-            transform: none;
-          }
-          .comment-tip {
-            font-size: 0.8em;
-            color: var(--hint-color);
-            margin-top: 5px;
-            white-space: nowrap;
-          }
-          .cf-challenge {
-            margin-bottom: 10px;
-          }
-          /* ツールチップ */
-          .tooltip {
-            position: relative;
-            display: inline-block;
-          }
-          .tooltip .tooltiptext {
-            visibility: hidden;
-            background-color: var(--hint-color);
-            color: var(--text-color);
-            text-align: center;
-            border-radius: 6px;
-            padding: 5px;
-            position: absolute;
-            z-index: 1;
-            bottom: 125%;
-            left: 50%;
-            margin-left: -60px;
-            font-size: 0.8em;
-            white-space: nowrap;
-            opacity: 0;
-            transition: opacity 0.3s;
-          }
-          .tooltip:hover .tooltiptext {
-            visibility: visible;
-            opacity: 1;
-          }
-          .notification-bar {
-            position: fixed;
-            bottom: 0;
-            left: 0;
-            width: 100%;
-            background: var(--notification-bg-color);
-            color: var(--notification-text-color);
-            padding: 10px 20px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            font-size: 14px;
-            z-index: 9999;
-          }
-          .notification-bar.hidden {
-            display: none;
-          }
-          .close-btn {
-            cursor: pointer;
-            margin-left: 20px;
-            font-weight: bold;
-          }
+  const pageContent = html` <html>
+    <head>
+      <style>
+        body {
+          background: var(--bg-color);
+          color: var(--text-color);
+          font-family: sans-serif;
+          max-width: 800px;
+          margin: 40px auto;
+          padding: 20px;
+        }
+        a {
+          color: var(--link-color);
+          text-decoration: none;
+        }
+        a:hover {
+          color: var(--link-hover-color);
+        }
+        .hint {
+          color: var(--hint-color);
+          margin-bottom: 10px;
+        }
+        .comment-list {
+          margin-top: 20px;
+        }
+        .comment-item {
+          padding: 10px 0 0 10px;
+          background: var(--comment-bg-color);
+          border-radius: 4px;
+          /* border: 1px solid var(--border-color); */
+        }
 
-          /* 隠されたコメントの場合、プレースホルダー/ボタンのみ表示 */
-          .hidden-comment-placeholder {
-            font-style: italic;
-            color: var(--hint-color);
-          }
-          .show-btn {
-            color: var(--link-color);
-            margin-left: 8px;
-            cursor: pointer;
-          }
-          .show-btn:hover {
-            text-decoration: underline;
-          }
-          .show-comment-input {
-            margin-top: 10px;
-            text-align: left;
-          }
-          .show-comment-input button {
-            background: var(--button-bg-color);
-            color: var(--button-text-color);
-            border: none;
-            padding: 8px 12px;
-            cursor: pointer;
-            border-radius: 3px;
-            transition: background 0.3s ease, transform 0.2s ease;
-            margin-bottom: 10px;
-          }
-          .show-comment-input button:hover {
-            background: var(--button-hover-color);
-            transform: scale(1.02);
-          }
-          /* 深色・浅色テーマ */
-          :root {
-            --bg-color: #121212;
-            --text-color: #fff;
-            --link-color: #bbb;
-            --link-hover-color: #fff;
-            --input-bg-color: #1e1e1e;
-            --border-color: #444;
-            --button-bg-color: #333;
-            --button-text-color: #fff;
-            --button-hover-color: #444;
-            --notification-bg-color: #2a2a2a;
-            --notification-text-color: #fff;
-            --comment-bg-color: #1e1e1e;
-            --comment-text-color: #ccc;
-            --hint-color: #aaa;
-          }
+        .comment-list > .comment-item {
+          padding: 10px;
+          margin-bottom: 15px;
+        }
 
-          [data-theme="light"] {
-            --bg-color: #ffffff;
-            --text-color: #333;
-            --link-color: #555;
-            --link-hover-color: #000;
-            --input-bg-color: #eee;
-            --border-color: #ccc;
-            --button-bg-color: #ddd;
-            --button-text-color: #333;
-            --button-hover-color: #eee;
-            --notification-bg-color: #f0f0f0;
-            --notification-text-color: #333;
-            --comment-bg-color: #eee;
-            --comment-text-color: #555;
-            --hint-color: #777;
-          }
-          .top-actions {
-            margin-bottom: 20px;
-            display: flex;
-            justify-content: flex-end;
-          }
-          .top-actions button {
-            background: var(--button-bg-color);
-            color: var(--button-text-color);
-            border: none;
-            padding: 8px 12px;
-            cursor: pointer;
-            border-radius: 3px;
-            transition: background 0.3s ease, transform 0.2s ease;
-            margin-left: 10px;
-          }
+        .reply-item {
+          margin-left: 20px;
+        }
+        .reply-btn,
+        .report-btn,
+        .like-btn {
+          margin-left: 10px;
+          color: var(--hint-color);
+          cursor: pointer;
+          font-size: 12px;
+          display: inline-block;
+        }
+        .like-btn.liked {
+          color: var(--link-color);
+        }
+        .reply-box {
+          margin-top: 5px;
+        }
+        .markdown-content {
+          font-size: 12px;
+          color: var(--comment-text-color);
+          padding: 2px 0;
+        }
+        .form-group {
+          display: flex;
+          flex-direction: row;
+          align-items: flex-start;
+          margin: 20px 0;
+        }
+        .form-group textarea {
+          background: var(--input-bg-color);
+          color: var(--text-color);
+          border: 1px solid var(--border-color);
+          padding: 8px;
+          width: 100%;
+          height: 60px;
+          resize: vertical;
+          margin-bottom: 10px;
+          font-size: 14px;
+        }
+        .form-group .comment-action {
+          display: flex;
+          flex-direction: column;
+          justify-content: flex-end;
+          align-items: flex-end;
+        }
+        .form-group button {
+          background: var(--button-bg-color);
+          color: var(--button-text-color);
+          border: none;
+          padding: 6px 10px;
+          cursor: pointer;
+          border-radius: 3px;
+          transition: background 0.3s ease, transform 0.2s ease;
+          margin-left: 5px;
+          font-size: 12px;
+          white-space: nowrap;
+        }
+        .form-group button:hover {
+          background: var(--button-hover-color);
+          transform: scale(1.02);
+        }
+        .form-group button[disabled] {
+          background: #ddd; /* 禁用状態時の背景色 */
+          color: #999; /* 禁用状態時の文字色 */
+          cursor: not-allowed; /* 禁用状態時のマウスカーソル */
+        }
+        .form-group button[disabled]:hover {
+          background: #ddd; /* 禁用状態時の背景色 */
+          color: #999; /* 禁用状態時の文字色 */
+          transform: none;
+        }
+        .comment-tip {
+          font-size: 0.8em;
+          color: var(--hint-color);
+          margin-top: 5px;
+          white-space: nowrap;
+        }
+        .cf-challenge {
+          margin-bottom: 10px;
+        }
+        /* ツールチップ */
+        .tooltip {
+          position: relative;
+          display: inline-block;
+        }
+        .tooltip .tooltiptext {
+          visibility: hidden;
+          background-color: var(--hint-color);
+          color: var(--text-color);
+          text-align: center;
+          border-radius: 6px;
+          padding: 5px;
+          position: absolute;
+          z-index: 1;
+          bottom: 125%;
+          left: 50%;
+          margin-left: -60px;
+          font-size: 0.8em;
+          white-space: nowrap;
+          opacity: 0;
+          transition: opacity 0.3s;
+        }
+        .tooltip:hover .tooltiptext {
+          visibility: visible;
+          opacity: 1;
+        }
+        .notification-bar {
+          position: fixed;
+          bottom: 0;
+          left: 0;
+          width: 100%;
+          background: var(--notification-bg-color);
+          color: var(--notification-text-color);
+          padding: 10px 20px;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          font-size: 14px;
+          z-index: 9999;
+        }
+        .notification-bar.hidden {
+          display: none;
+        }
+        .close-btn {
+          cursor: pointer;
+          margin-left: 20px;
+          font-weight: bold;
+        }
 
-          .top-actions button:hover {
-            background: var(--button-hover-color);
-            transform: scale(1.02);
-          }
-          .markdown-content.markdown-body {
-            background-color: inherit;
-          }
-        </style>
-      </head>
-      <body>
-        <div class="top-actions">
-          <button id="toggleTheme">
-            ${theme === "light" ? t.dark : t.light}
-          </button>
-          <button id="toggleLang">${lang === "ja" ? "EN" : "日本語"}</button>
-        </div>
-        <h1>${area.name}</h1>
-        <div class="hint">${area.intro || ""}</div>
+        /* 隠されたコメントの場合、プレースホルダー/ボタンのみ表示 */
+        .hidden-comment-placeholder {
+          font-style: italic;
+          color: var(--hint-color);
+        }
+        .show-btn {
+          color: var(--link-color);
+          margin-left: 8px;
+          cursor: pointer;
+        }
+        .show-btn:hover {
+          text-decoration: underline;
+        }
+        .show-comment-input {
+          margin-top: 10px;
+          text-align: left;
+        }
+        .show-comment-input button {
+          background: var(--button-bg-color);
+          color: var(--button-text-color);
+          border: none;
+          padding: 8px 12px;
+          cursor: pointer;
+          border-radius: 3px;
+          transition: background 0.3s ease, transform 0.2s ease;
+          margin-bottom: 10px;
+        }
+        .show-comment-input button:hover {
+          background: var(--button-hover-color);
+          transform: scale(1.02);
+        }
+        /* 深色・浅色テーマ */
+        :root {
+          --bg-color: #121212;
+          --text-color: #fff;
+          --link-color: #bbb;
+          --link-hover-color: #fff;
+          --input-bg-color: #1e1e1e;
+          --border-color: #444;
+          --button-bg-color: #333;
+          --button-text-color: #fff;
+          --button-hover-color: #444;
+          --notification-bg-color: #2a2a2a;
+          --notification-text-color: #fff;
+          --comment-bg-color: #1e1e1e;
+          --comment-text-color: #ccc;
+          --hint-color: #aaa;
+        }
 
-        <div class="show-comment-input" id="showCommentInput">
-          <button id="showInputBtn">${t.show_comment_input}</button>
-        </div>
-        <div id="commentForm" class="form-group" style="display: none;">
-          <textarea
-            id="newComment"
-            placeholder="${t.comment_placeholder}"
-          ></textarea>
-          <div class="comment-action">
-            <input type="hidden" id="parentId" value="0" />
-            <div
-              class="cf-challenge"
-              data-sitekey="${env.TURNSTILE_SITEKEY || ""}"
-              data-theme="auto"
-              style="display:none;"
-            ></div>
-            <div class="tooltip">
-              <button id="submitBtn" disabled>
-                ${t.submit_comment_btn}
-                <span class="tooltiptext" id="submitTooltip"
-                  >${t.notification_missing_input}</span
-                >
-              </button>
-            </div>
-            <div class="comment-tip">${t.comment_tip}</div>
+        [data-theme="light"] {
+          --bg-color: #ffffff;
+          --text-color: #333;
+          --link-color: #555;
+          --link-hover-color: #000;
+          --input-bg-color: #eee;
+          --border-color: #ccc;
+          --button-bg-color: #ddd;
+          --button-text-color: #333;
+          --button-hover-color: #eee;
+          --notification-bg-color: #f0f0f0;
+          --notification-text-color: #333;
+          --comment-bg-color: #eee;
+          --comment-text-color: #555;
+          --hint-color: #777;
+        }
+        .top-actions {
+          margin-bottom: 20px;
+          display: flex;
+          justify-content: flex-end;
+        }
+        .top-actions button {
+          background: var(--button-bg-color);
+          color: var(--button-text-color);
+          border: none;
+          padding: 8px 12px;
+          cursor: pointer;
+          border-radius: 3px;
+          transition: background 0.3s ease, transform 0.2s ease;
+          margin-left: 10px;
+        }
+
+        .top-actions button:hover {
+          background: var(--button-hover-color);
+          transform: scale(1.02);
+        }
+        .markdown-content.markdown-body {
+          background-color: inherit;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="hint">${area.intro || ""}</div>
+
+      <div class="show-comment-input" id="showCommentInput">
+        <button id="showInputBtn">${t.show_comment_input}</button>
+      </div>
+      <div id="commentForm" class="form-group" style="display: none;">
+        <textarea
+          id="newComment"
+          placeholder="${t.comment_placeholder}"
+        ></textarea>
+        <div class="comment-action">
+          <input type="hidden" id="parentId" value="0" />
+          <div
+            class="cf-challenge"
+            data-sitekey="${env.TURNSTILE_SITEKEY || ""}"
+            data-theme="auto"
+            style="display:none;"
+          ></div>
+          <div class="tooltip">
+            <button id="submitBtn" disabled>
+              ${t.submit_comment_btn}
+              <span class="tooltiptext" id="submitTooltip"
+                >${t.notification_missing_input}</span
+              >
+            </button>
           </div>
+          <div class="comment-tip">${t.comment_tip}</div>
         </div>
+      </div>
 
-        <div class="comment-list" id="commentList">${t.loading}</div>
-        <!-- 通知バー -->
-        <div id="notificationBar" class="notification-bar hidden">
-          <span id="notificationText"></span>
-          <span id="closeNotification" class="close-btn">×</span>
-        </div>
-        <script>
-          const notificationBar = document.getElementById("notificationBar");
-          const notificationText = document.getElementById("notificationText");
-          const closeNotification =
-            document.getElementById("closeNotification");
-          closeNotification.addEventListener("click", () =>
-            notificationBar.classList.add("hidden")
-          );
-          function showNotification(msg) {
-            notificationText.textContent = msg;
-            notificationBar.classList.remove("hidden");
+      <div class="comment-list" id="commentList">${t.loading}</div>
+      <!-- 通知バー -->
+      <div id="notificationBar" class="notification-bar hidden">
+        <span id="notificationText"></span>
+        <span id="closeNotification" class="close-btn">×</span>
+      </div>
+      <script>
+        const notificationBar = document.getElementById("notificationBar");
+        const notificationText = document.getElementById("notificationText");
+        const closeNotification = document.getElementById("closeNotification");
+        closeNotification.addEventListener("click", () =>
+          notificationBar.classList.add("hidden")
+        );
+        function showNotification(msg) {
+          notificationText.textContent = msg;
+          notificationBar.classList.remove("hidden");
+        }
+        let commentList = document.getElementById("commentList");
+        let comments = []; // コメントデータをキャッシュ
+        async function loadComments() {
+          commentList.textContent = "${t.loading}";
+          const res = await fetch(location.pathname + "/comments");
+          if (!res.ok) {
+            commentList.textContent = "${t.notification_not_found}";
+            return;
           }
-          let commentList = document.getElementById("commentList");
-          let comments = []; // コメントデータをキャッシュ
-          async function loadComments() {
-            commentList.textContent = "${t.loading}";
-            const res = await fetch(location.pathname + "/comments");
-            if (!res.ok) {
-              commentList.textContent = "${t.notification_not_found}";
-              return;
+          comments = await res.json();
+          renderComments(comments);
+        }
+        // フラットなコメントデータをツリー構造に組み立てる
+        function buildCommentTree(list) {
+          const map = {};
+          list.forEach((c) => {
+            map[c.id] = { ...c, replies: [] };
+          });
+          const roots = [];
+          list.forEach((c) => {
+            if (c.parent_id && c.parent_id !== 0) {
+              map[c.parent_id]?.replies.push(map[c.id]);
+            } else {
+              roots.push(map[c.id]);
             }
-            comments = await res.json();
-            renderComments(comments);
+          });
+          return roots;
+        }
+        // 管理者ログインを判断
+        const authed = document.cookie.includes("auth=1");
+        // コメントツリーをレンダリング
+        function renderComments(comments) {
+          commentList.innerHTML = "";
+          if (comments.length === 0) {
+            commentList.textContent = "${t.no_comments}";
+            return;
           }
-          // フラットなコメントデータをツリー構造に組み立てる
-          function buildCommentTree(list) {
-            const map = {};
-            list.forEach((c) => {
-              map[c.id] = { ...c, replies: [] };
-            });
-            const roots = [];
-            list.forEach((c) => {
-              if (c.parent_id && c.parent_id !== 0) {
-                map[c.parent_id]?.replies.push(map[c.id]);
-              } else {
-                roots.push(map[c.id]);
-              }
-            });
-            return roots;
-          }
-          // 管理者ログインを判断
-          const authed = document.cookie.includes("auth=1");
-          // コメントツリーをレンダリング
-          function renderComments(comments) {
-            commentList.innerHTML = "";
-            if (comments.length === 0) {
-              commentList.textContent = "${t.no_comments}";
-              return;
+          const tree = buildCommentTree(comments);
+          tree.forEach((comment) => {
+            if (comment.hidden !== 1) {
+              commentList.appendChild(renderCommentItem(comment));
             }
-            const tree = buildCommentTree(comments);
-            tree.forEach((comment) => {
-              if (comment.hidden !== 1) {
-                commentList.appendChild(renderCommentItem(comment));
-              }
-            });
-          }
-          function renderCommentItem(comment) {
-            const div = document.createElement("div");
-            div.className =
-              "comment-item" + (comment.parent_id ? " reply-item" : "");
-            div.innerHTML = \`
+          });
+        }
+        function renderCommentItem(comment) {
+          const div = document.createElement("div");
+          div.className =
+            "comment-item" + (comment.parent_id ? " reply-item" : "");
+          div.innerHTML = \`
               <div class="markdown-content markdown-body">\${
                 comment.html_content
               }</div>
@@ -2042,279 +1968,185 @@ async function handleCommentAreaPage(
                   <span class="reply-btn" data-comment-id="\${
                     comment.id
                   }" style="text-decoration: none;">${t.reply_btn}</span>
-                  \${
-                    authed
-                      ? \`<span onclick="toggleHideComment(\${
-                          comment.id
-                        })" style="text-decoration: none;display: inline-block;cursor: pointer; margin-left: 10px;">${t.hide}</span>  <span onclick="togglePinComment(\${
-                          comment.id
-                        })" style="text-decoration: none;display: inline-block;cursor: pointer; margin-left: 10px;">\${
-                          comment.pinned ? "${t.unhide}" : "${t.hide}"
-                        }</span>\`
-                      : ""
-                  }
           \`;
-            // 子返信がある場合
-            if (comment.replies && comment.replies.length > 0) {
-              comment.replies.forEach((r) => {
-                div.appendChild(renderCommentItem(r));
-              });
-            }
-            return div;
-          }
 
-          // フロントエンドで「非表示」コメントの表示/折りたたみ
-          window.toggleHiddenContent = (trigger, commentId) => {
-            const wrapper = trigger.closest(
-              ".hidden-comment-placeholder"
-            ).nextElementSibling;
-            if (!wrapper) return;
-            const isHidden = wrapper.style.display === "none";
-            wrapper.style.display = isHidden ? "block" : "none";
-            trigger.textContent = isHidden
-              ? "${t.collapse_comment}"
-              : "${t.view_comment}";
-          };
-
-          // 個別コメントの非表示切り替え（管理者のみ）
-          window.toggleHideComment = async (commentId) => {
-            const res = await fetch(
-              "/admin/comment/" + commentId + "/toggleHide",
-              { method: "POST" }
-            );
-            if (res.ok) {
-              showNotification("${t.notification_comment_hidden_toggle}");
-              // ローカルで更新
-              const index = comments.findIndex((c) => c.id === commentId);
-              if (index !== -1) {
-                comments[index].hidden = comments[index].hidden === 1 ? 0 : 1;
-              }
-              renderComments(comments);
-            } else {
-              showNotification(
-                "${t.notification_toggle_failed}：" + (await res.text())
-              );
-            }
-          };
-          // 個別コメントのピン留め切り替え（管理者のみ）
-          window.togglePinComment = async (commentId) => {
-            const res = await fetch(
-              "/admin/comment/" + commentId + "/togglePin",
-              { method: "POST" }
-            );
-            if (res.ok) {
-              showNotification("${t.notification_toggle_success}");
-              // ローカルで更新
-              const index = comments.findIndex((c) => c.id === commentId);
-              if (index !== -1) {
-                comments[index].pinned = comments[index].pinned === 1 ? 0 : 1;
-              }
-              renderComments(comments);
-            } else {
-              showNotification(
-                "${t.notification_toggle_failed}：" + (await res.text())
-              );
-            }
-          };
-          // 入力ボックスを監視
-          const newCommentInput = document.getElementById("newComment");
-          const submitButton = document.getElementById("submitBtn");
-          const submitTooltip = document.getElementById("submitTooltip");
-          const cfChallenge = document.querySelector(".cf-challenge");
-          function checkFormValidity() {
-            if (
-              newCommentInput.value.trim() &&
-              cfChallenge.querySelector('[name="cf-turnstile-response"]')?.value
-            ) {
-              submitButton.disabled = false;
-              submitTooltip.style.visibility = "hidden";
-            } else {
-              submitButton.disabled = true;
-              submitTooltip.style.visibility = "visible";
-              if (!newCommentInput.value.trim()) {
-                submitTooltip.textContent =
-                  "${t.notification_comment_missing_content}";
-              } else if (
-                !cfChallenge.querySelector('[name="cf-turnstile-response"]')
-                  ?.value
-              ) {
-                submitTooltip.textContent =
-                  "${t.turnstile_verification_required}";
-              }
-            }
-          }
-
-          newCommentInput.addEventListener("input", checkFormValidity);
-          cfChallenge.addEventListener("DOMSubtreeModified", checkFormValidity);
-          // コメント入力の表示
-          document
-            .getElementById("showInputBtn")
-            .addEventListener("click", () => {
-              document.getElementById("commentForm").style.display = "flex";
-              document.getElementById("showCommentInput").style.display =
-                "none";
-              // Turnstileの初期化
-              const challengeDiv = document.querySelector(".cf-challenge");
-              challengeDiv.innerHTML = "";
-              challengeDiv.style.display = "block";
-              if (window.turnstile) {
-                turnstile.render(challengeDiv, {
-                  sitekey: "${env.TURNSTILE_SITEKEY || ""}",
-                  theme: "auto",
-                });
-              } else {
-                document.addEventListener("turnstile-ready", () => {
-                  turnstile.render(challengeDiv, {
-                    sitekey: "${env.TURNSTILE_SITEKEY || ""}",
-                    theme: "auto",
-                  });
-                });
-              }
+          // 子返信がある場合
+          if (comment.replies && comment.replies.length > 0) {
+            comment.replies.forEach((r) => {
+              div.appendChild(renderCommentItem(r));
             });
-          // 返信を開始
-          document.addEventListener("click", (e) => {
-            if (e.target && e.target.classList.contains("reply-btn")) {
-              const commentId = e.target.dataset.commentId;
-              document.getElementById("parentId").value = commentId;
-              document.getElementById("commentForm").style.display = "flex";
-              document.getElementById("showCommentInput").style.display =
-                "none";
-              document.getElementById("newComment").focus();
-              // Turnstileの初期化
-              const challengeDiv = document.querySelector(".cf-challenge");
-              challengeDiv.innerHTML = "";
-              challengeDiv.style.display = "block";
-              if (window.turnstile) {
+          }
+          return div;
+        }
+
+        // 個別コメントのピン留め切り替え（管理者のみ）
+        window.togglePinComment = async (commentId) => {
+          const res = await fetch(
+            "/admin/comment/" + commentId + "/togglePin",
+            { method: "POST" }
+          );
+          if (res.ok) {
+            showNotification("${t.notification_toggle_success}");
+            // ローカルで更新
+            const index = comments.findIndex((c) => c.id === commentId);
+            if (index !== -1) {
+              comments[index].pinned = comments[index].pinned === 1 ? 0 : 1;
+            }
+            renderComments(comments);
+          } else {
+            showNotification(
+              "${t.notification_toggle_failed}：" + (await res.text())
+            );
+          }
+        };
+        // 入力ボックスを監視
+        const newCommentInput = document.getElementById("newComment");
+        const submitButton = document.getElementById("submitBtn");
+        const submitTooltip = document.getElementById("submitTooltip");
+        const cfChallenge = document.querySelector(".cf-challenge");
+        function checkFormValidity() {
+          if (
+            newCommentInput.value.trim() &&
+            cfChallenge.querySelector('[name="cf-turnstile-response"]')?.value
+          ) {
+            submitButton.disabled = false;
+            submitTooltip.style.visibility = "hidden";
+          } else {
+            submitButton.disabled = true;
+            submitTooltip.style.visibility = "visible";
+            if (!newCommentInput.value.trim()) {
+              submitTooltip.textContent =
+                "${t.notification_comment_missing_content}";
+            } else if (
+              !cfChallenge.querySelector('[name="cf-turnstile-response"]')
+                ?.value
+            ) {
+              submitTooltip.textContent =
+                "${t.turnstile_verification_required}";
+            }
+          }
+        }
+
+        newCommentInput.addEventListener("input", checkFormValidity);
+        cfChallenge.addEventListener("DOMSubtreeModified", checkFormValidity);
+        // コメント入力の表示
+        document
+          .getElementById("showInputBtn")
+          .addEventListener("click", () => {
+            document.getElementById("commentForm").style.display = "flex";
+            document.getElementById("showCommentInput").style.display = "none";
+            // Turnstileの初期化
+            const challengeDiv = document.querySelector(".cf-challenge");
+            challengeDiv.innerHTML = "";
+            challengeDiv.style.display = "block";
+            if (window.turnstile) {
+              turnstile.render(challengeDiv, {
+                sitekey: "${env.TURNSTILE_SITEKEY || ""}",
+                theme: "auto",
+              });
+            } else {
+              document.addEventListener("turnstile-ready", () => {
                 turnstile.render(challengeDiv, {
                   sitekey: "${env.TURNSTILE_SITEKEY || ""}",
                   theme: "auto",
                 });
-              } else {
-                document.addEventListener("turnstile-ready", () => {
-                  turnstile.render(challengeDiv, {
-                    sitekey: "${env.TURNSTILE_SITEKEY || ""}",
-                    theme: "auto",
-                  });
-                });
-              }
+              });
             }
           });
-
-          // コメントを送信
-          submitButton.addEventListener("click", async () => {
-            const content = document.getElementById("newComment").value.trim();
-            const parentId = document.getElementById("parentId").value || "0";
-            if (!content) {
-              showNotification("${t.notification_comment_missing_content}");
-              return;
-            }
-            // Turnstileトークン
-            const token =
-              document.querySelector('[name="cf-turnstile-response"]')?.value ||
-              "";
-            const formData = new FormData();
-            formData.append("content", content);
-            formData.append("parent_id", parentId);
-            formData.append("cf-turnstile-response", token);
-
-            const res = await fetch(location.pathname + "/comment", {
-              method: "POST",
-              body: formData,
-            });
-            if (res.ok) {
-              document.getElementById("newComment").value = "";
-              document.getElementById("parentId").value = "0";
-              // コメントを再取得
-              const res = await fetch(location.pathname + "/comments");
-              if (!res.ok) {
-                showNotification(
-                  "${t.notification_comment_submit_failed}：" +
-                    (await res.text())
-                );
-                return;
-              }
-              comments = await res.json();
-              renderComments(comments);
-
-              // Turnstileを非表示にし、リセット
-              const challengeDiv = document.querySelector(".cf-challenge");
-              challengeDiv.style.display = "none";
-              setTimeout(() => {
-                challengeDiv.innerHTML = "";
-                challengeDiv.style.display = "block";
-                // Turnstileを再レンダリング
+        // 返信を開始
+        document.addEventListener("click", (e) => {
+          if (e.target && e.target.classList.contains("reply-btn")) {
+            const commentId = e.target.dataset.commentId;
+            document.getElementById("parentId").value = commentId;
+            document.getElementById("commentForm").style.display = "flex";
+            document.getElementById("showCommentInput").style.display = "none";
+            document.getElementById("newComment").focus();
+            // Turnstileの初期化
+            const challengeDiv = document.querySelector(".cf-challenge");
+            challengeDiv.innerHTML = "";
+            challengeDiv.style.display = "block";
+            if (window.turnstile) {
+              turnstile.render(challengeDiv, {
+                sitekey: "${env.TURNSTILE_SITEKEY || ""}",
+                theme: "auto",
+              });
+            } else {
+              document.addEventListener("turnstile-ready", () => {
                 turnstile.render(challengeDiv, {
                   sitekey: "${env.TURNSTILE_SITEKEY || ""}",
                   theme: "auto",
                 });
-              }, 100);
-            } else {
-              showNotification(
-                "${t.notification_toggle_failed}：" + (await res.text())
-              );
+              });
             }
-          };
-
-
-          // 最初のコメントのロード
-          loadComments();
-          // テーマと言語の初期化
-          document.documentElement.setAttribute("data-theme", "${theme}");
-          document.documentElement.lang = "${lang}";
-          // テーマを切り替える
-          const toggleThemeBtn = document.getElementById("toggleTheme");
-          if (toggleThemeBtn) {
-            toggleThemeBtn.addEventListener("click", async () => {
-              const currentTheme =
-                document.documentElement.getAttribute("data-theme") || "dark";
-              const newTheme = currentTheme === "dark" ? "light" : "dark";
-              const res = await fetch("/setTheme", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ theme: newTheme }),
-              });
-              if (res.ok) {
-                document.documentElement.setAttribute("data-theme", newTheme);
-                toggleThemeBtn.textContent =
-                  newTheme === "light" ? "${t.dark}" : "${t.light}";
-              } else {
-                showNotification(
-                  "${t.notification_toggle_failed}：" + (await res.text())
-                );
-              }
-            });
           }
+        });
 
-          // 言語を切り替える
-          const toggleLangBtn = document.getElementById("toggleLang");
-          if (toggleLangBtn) {
-            toggleLangBtn.addEventListener("click", async () => {
-              const currentLang = document.documentElement.lang || "ja";
-              const newLang = currentLang === "ja" ? "en" : "ja";
-              const res = await fetch("/setLang", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ lang: newLang }),
-              });
-              if (res.ok) {
-                document.documentElement.lang = newLang;
-                toggleLangBtn.textContent = newLang === "ja" ? "EN" : "日本語";
-                location.reload();
-              } else {
-                showNotification(
-                  "${t.notification_toggle_failed}：" + (await res.text())
-                );
-              }
-            });
+        // コメントを送信
+        submitButton.addEventListener("click", async () => {
+          const content = document.getElementById("newComment").value.trim();
+          const parentId = document.getElementById("parentId").value || "0";
+          if (!content) {
+            showNotification("${t.notification_comment_missing_content}");
+            return;
           }
-        </script>
-        <script
-          src="https://challenges.cloudflare.com/turnstile/v0/api.js"
-          async
-          defer
-        ></script>
-      </body>
-    </html>`;
+          // Turnstileトークン
+          const token =
+            document.querySelector('[name="cf-turnstile-response"]')?.value ||
+            "";
+          const formData = new FormData();
+          formData.append("content", content);
+          formData.append("parent_id", parentId);
+          formData.append("cf-turnstile-response", token);
+
+          const res = await fetch(location.pathname + "/comment", {
+            method: "POST",
+            body: formData,
+          });
+          if (res.ok) {
+            document.getElementById("newComment").value = "";
+            document.getElementById("parentId").value = "0";
+            // コメントを再取得
+            const res = await fetch(location.pathname + "/comments");
+            if (!res.ok) {
+              showNotification(
+                "${t.notification_comment_submit_failed}：" + (await res.text())
+              );
+              return;
+            }
+            comments = await res.json();
+            renderComments(comments);
+
+            // Turnstileを非表示にし、リセット
+            const challengeDiv = document.querySelector(".cf-challenge");
+            challengeDiv.style.display = "none";
+            setTimeout(() => {
+              challengeDiv.innerHTML = "";
+              challengeDiv.style.display = "block";
+              // Turnstileを再レンダリング
+              turnstile.render(challengeDiv, {
+                sitekey: "${env.TURNSTILE_SITEKEY || ""}",
+                theme: "auto",
+              });
+            }, 100);
+          } else {
+            showNotification(
+              "${t.notification_comment_submit_failed}：" + (await res.text())
+            );
+          }
+        });
+
+        // 最初のコメントのロード
+        loadComments();
+        // テーマ設定
+        document.documentElement.setAttribute("data-theme", "${theme}");
+      </script>
+      <script
+        src="https://challenges.cloudflare.com/turnstile/v0/api.js"
+        async
+        defer
+      ></script>
+    </body>
+  </html>`;
   return new Response(pageContent.toString(), {
     headers: {
       "Content-Type": "text/html;charset=UTF-8",
@@ -2370,6 +2202,7 @@ async function handleGetComments(
   // 各コメントにhtml_contentフィールドを追加する（Markdownレンダリング用）
   list.forEach((c: Comment) => {
     c.html_content = c.content;
+    c.liked = false;
   });
   return new Response(JSON.stringify(list), {
     status: 200,
@@ -2469,7 +2302,64 @@ async function handlePostComment(
 
   return new Response("OK", { status: 200 });
 }
+/** コメントを「いいね」する */
+async function handleLikeComment(
+  request: Request,
+  env: Env
+): Promise<Response> {
+  const match = request.url.match(/\/comment\/(\d+)\/like$/);
+  if (!match) {
+    return new Response("Invalid", { status: 400 });
+  }
+  const commentId = parseInt(match[1], 10);
+  // コメントが存在するかチェック
+  const comment: { likes: number } | null = await env.DB.prepare(
+    "SELECT likes FROM comments WHERE id=?"
+  )
+    .bind(commentId)
+    .first<{ likes: number }>();
+  if (!comment) {
+    return new Response("Comment does not exist", { status: 404 });
+  }
+  const newLikes = (comment.likes || 0) + 1;
+  await env.DB.prepare("UPDATE comments SET likes=? WHERE id=?")
+    .bind(newLikes, commentId)
+    .run();
+  return new Response("OK", { status: 200 });
+}
+/** コメントをレポートする */
+async function handleReportComment(
+  request: Request,
+  env: Env
+): Promise<Response> {
+  const match = new URL(request.url).pathname.match(
+    /\/comment\/(\d+)\/report$/
+  );
+  if (!match) {
+    return new Response("Invalid", { status: 400 });
+  }
+  const commentId = parseInt(match[1], 10);
+  const formData = await request.formData();
+  const reason = String(formData.get("reason") || "");
 
+  if (!reason) {
+    return new Response("Missing report reason", { status: 400 });
+  }
+  // コメントが存在するかチェック
+  const comment: { id: number } | null = await env.DB.prepare(
+    "SELECT id FROM comments WHERE id=?"
+  )
+    .bind(commentId)
+    .first<{ id: number }>();
+  if (!comment) {
+    return new Response("Comment does not exist", { status: 404 });
+  }
+  // レポートを書き込む
+  await env.DB.prepare("INSERT INTO reports (comment_id, reason) VALUES (?, ?)")
+    .bind(commentId, reason)
+    .run();
+  return new Response("OK", { status: 200 });
+}
 /** 議論エリアを削除する (管理者) */
 async function handleDeleteArea(
   areaKeyEncoded: string,
@@ -2529,31 +2419,7 @@ async function handleToggleHideArea(
     .run();
   return new Response("OK", { status: 200 });
 }
-/** 個別コメントの非表示状態を切り替える (管理者) */
-async function handleToggleHideComment(
-  commentId: number,
-  request: Request,
-  env: Env
-): Promise<Response> {
-  const cookie = parseCookie(request.headers.get("Cookie"));
-  if (cookie.auth !== "1") {
-    return new Response("Unauthorized", { status: 401 });
-  }
-  // 存在するかどうかをクエリ
-  const comment: { hidden: number } | null = await env.DB.prepare(
-    "SELECT hidden FROM comments WHERE id=?"
-  )
-    .bind(commentId)
-    .first<{ hidden: number }>();
-  if (!comment) {
-    return new Response("Comment does not exist", { status: 404 });
-  }
-  const newHidden = (comment.hidden || 0) === 1 ? 0 : 1;
-  await env.DB.prepare("UPDATE comments SET hidden=? WHERE id=?")
-    .bind(newHidden, commentId)
-    .run();
-  return new Response("OK", { status: 200 });
-}
+
 /** 個別コメントのピン留め状態を切り替える (管理者) */
 async function handleTogglePinComment(
   commentId: number,
