@@ -1479,7 +1479,18 @@ async function handleCommentAreaPage(request: Request, env: Env, lang: string, t
                     comments = await res.json();
                     renderComments(comments);
                 }
-                // フラットなコメントデータをツリー構造に組み立てる
+
+                /*
+                 * フラットなコメントリストをツリー構造に変換する関数
+                 *
+                 * @param {Array} list - コメントオブジェクトの配列（各コメントはidとparent_idを持つ）
+                 * @returns {Array} ツリー構造化されたコメント配列（親コメントがルート、子コメントがreplies配列に格納される）
+                 *
+                 * 各コメントをidをキーとするマップに格納し、
+                 * parent_idを参照して子コメントを親のreplies配列に追加することで、
+                 * 階層構造（ツリー）を作成する。
+                 * parent_idが0またはnullのコメントはルートノードとして扱われる。
+                 */
                 function buildCommentTree(list) {
                     const map = {};
                     list.forEach((c) => {
@@ -1495,9 +1506,16 @@ async function handleCommentAreaPage(request: Request, env: Env, lang: string, t
                     });
                     return roots;
                 }
-                // 管理者ログインを判断
-                const authed = document.cookie.includes("auth=1");
-                // コメントツリーをレンダリング
+
+                /*
+                 * コメントリスト全体をレンダリングする関数
+                 *
+                 * @param {Array} comments - コメントオブジェクトの配列
+                 *
+                 * コメントが空の場合は「コメントなし」メッセージを表示し、
+                 * それ以外はコメントのツリー構造を組み立ててから
+                 * 表示用のDOMを追加していく。
+                 */
                 function renderComments(comments) {
                     commentList.empty();
                     if (comments.length === 0) {
@@ -1511,6 +1529,16 @@ async function handleCommentAreaPage(request: Request, env: Env, lang: string, t
                         }
                     });
                 }
+
+                /*
+                 * 単一コメント要素のDOM構造を生成する関数
+                 *
+                 * @param {Object} comment - コメントオブジェクト
+                 * @returns {jQuery} - コメントを表すjQueryオブジェクト
+                 *
+                 * コメント本文、投稿日時、返信ボタンを含むDOMを生成し、
+                 * 返信コメントがあれば再帰的に子要素として追加する。
+                 */
                 function renderCommentItem(comment) {
                     let div = $("<div/>")
                         .add("comment")
@@ -1532,22 +1560,37 @@ async function handleCommentAreaPage(request: Request, env: Env, lang: string, t
                     return div;
                 }
 
-                // 入力ボックスを監視
-                const newCommentInput = document.getElementById("newComment");
+                /*
+                 * コメント投稿フォームのバリデーションとTurnstileの状態を監視する処理。
+                 *
+                 * 概要:
+                 * - コメント入力欄とTurnstileチャレンジの応答をチェックし、送信ボタンの有効・無効を切り替える。
+                 * - チャレンジが完了していない場合は .cf-challenge を表示、完了していれば非表示にする。
+                 *
+                 * 処理内容:
+                 * 1. checkFormValidity 関数で入力値と cf-turnstile-response の存在を確認。
+                 * 2. コメント入力の変化を .input イベントで監視。
+                 * 3. MutationObserver により .cf-challenge 内の DOM 変更を監視し、状態変化に応じて検証を実行。
+                 */
+                const commentBox = $("#newComment");
                 const submitButton = document.getElementById("submitBtn");
-                const cfChallenge = document.querySelector(".cf-challenge");
+                const challenge = $(".cf-challenge");
                 function checkFormValidity() {
-                    if (newCommentInput.value.trim() && cfChallenge.querySelector('[name="cf-turnstile-response"]')?.value) {
+                    if (commentBox.value().trim() && challenge.find('[name="cf-turnstile-response"]').value()) {
                         submitButton.disabled = false;
-                        cfChallenge.style.display = "none";
+                        challenge.show(false);
                     } else {
                         submitButton.disabled = true;
-                        cfChallenge.style.display = "block";
+                        challenge.show(true);
                     }
                 }
 
-                newCommentInput.addEventListener("input", checkFormValidity);
-                cfChallenge.addEventListener("DOMSubtreeModified", checkFormValidity);
+                commentBox.input(checkFormValidity);
+                new MutationObserver(checkFormValidity).observe(challenge.nodes[0], {
+                    childList: true,
+                    subtree: true,
+                    attributes: true,
+                });
 
                 /**
                  * Turnstile CAPTCHA を初期化する関数。
@@ -1563,7 +1606,7 @@ async function handleCommentAreaPage(request: Request, env: Env, lang: string, t
                  * ・Turnstile の sitekey は env.TURNSTILE_SITEKEY によって動的に設定される。
                  */
                 function initTurnstile() {
-                    let e = $(".cf-challenge").empty().css({ display: "block" }).nodes[0];
+                    let e = $(".cf-challenge").empty().show(true).nodes[0];
                     let render = () => {
                         turnstile.render(e, {
                             sitekey: "${env.TURNSTILE_SITEKEY}",
@@ -1597,28 +1640,28 @@ async function handleCommentAreaPage(request: Request, env: Env, lang: string, t
 
                 // コメントを送信
                 submitButton.addEventListener("click", async () => {
-                    const content = document.getElementById("newComment").value.trim();
-                    const parentId = document.getElementById("parentId").value || "0";
+                    let content = $("#newComment").value().trim();
+                    let parentId = $("#parentId").value() || "0";
                     if (!content) {
                         showNotification("${t.notification_comment_missing_content}");
                         return;
                     }
                     // Turnstileトークン
-                    const token = document.querySelector('[name="cf-turnstile-response"]')?.value || "";
-                    const formData = new FormData();
+                    let token = document.querySelector('[name="cf-turnstile-response"]')?.value || "";
+                    let formData = new FormData();
                     formData.append("content", content);
                     formData.append("parent_id", parentId);
                     formData.append("cf-turnstile-response", token);
 
-                    const res = await fetch(location.pathname + "/comment", {
+                    let res = await fetch(location.pathname + "/comment", {
                         method: "POST",
                         body: formData,
                     });
                     if (res.ok) {
-                        document.getElementById("newComment").value = "";
-                        document.getElementById("parentId").value = "0";
+                        $("#newComment").value("");
+                        $("#parentId").value("0");
                         // コメントを再取得
-                        const res = await fetch(location.pathname + "/comments");
+                        let res = await fetch(location.pathname + "/comments");
                         if (!res.ok) {
                             showNotification("${t.notification_comment_submit_failed}：" + (await res.text()));
                             return;
@@ -1627,13 +1670,11 @@ async function handleCommentAreaPage(request: Request, env: Env, lang: string, t
                         renderComments(comments);
 
                         // Turnstileを非表示にし、リセット
-                        const challengeDiv = document.querySelector(".cf-challenge");
-                        challengeDiv.style.display = "none";
+                        challenge.show(false);
                         setTimeout(() => {
-                            challengeDiv.innerHTML = "";
-                            challengeDiv.style.display = "block";
+                            challenge.empty().show(true);
                             // Turnstileを再レンダリング
-                            turnstile.render(challengeDiv, {
+                            turnstile.render(challenge.nodes[0], {
                                 sitekey: "${env.TURNSTILE_SITEKEY || ""}",
                                 theme: "auto",
                             });

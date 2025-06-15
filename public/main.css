@@ -57,6 +57,7 @@ body {
     position: absolute;
     top: 1;
     right: 0;
+    display: block;
 }
 
 #commentAction {
