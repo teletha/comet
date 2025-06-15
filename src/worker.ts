@@ -640,26 +640,6 @@ async function handleEmbedCommentArea(
             return div;
           }
 
-          // 個別コメントのピン留め切り替え（管理者のみ）
-          window.togglePinComment = async (commentId) => {
-            const res = await fetch(
-              "/admin/comment/" + commentId + "/togglePin",
-              { method: "POST" }
-            );
-            if (res.ok) {
-              showNotification("${t.notification_toggle_success}");
-              // ローカルで更新
-              const index = comments.findIndex((c) => c.id === commentId);
-              if (index !== -1) {
-                comments[index].pinned = comments[index].pinned === 1 ? 0 : 1;
-              }
-              renderComments(comments);
-            } else {
-              showNotification(
-                "${t.notification_toggle_failed}：" + (await res.text())
-              );
-            }
-          };
           // 入力ボックスを監視
           const newCommentInput = document.getElementById("newComment");
           const submitButton = document.getElementById("submitBtn");
@@ -1351,21 +1331,6 @@ async function handleHomePage(
             }
           }
 
-          // 個別コメントのピン留め状態を切り替える
-          async function togglePinComment(commentId) {
-            const res = await fetch(
-              "/admin/comment/" + commentId + "/togglePin",
-              { method: "POST" }
-            );
-            if (res.ok) {
-              showNotification("${t.notification_toggle_success}");
-              await fetchExtendedInfo();
-            } else {
-              showNotification(
-                "${t.notification_toggle_failed}：" + (await res.text())
-              );
-            }
-          }
           // 議論エリアの削除
           async function deleteArea(areaKey) {
             if (!confirm("${t.delete_confirm}")) return;
@@ -1607,211 +1572,7 @@ async function handleCommentAreaPage(
   // 議論エリアページを表示
   const pageContent = html` <html>
     <head>
-      <style>
-        body {
-          max-width: 800px;
-          margin: 20px auto;
-        }
-        .comment-list {
-          font-size: 15px;
-          line-height: 1.4;
-          color: var(--comment-text-color);
-          margin-top: 20px;
-          padding: 10px;
-        }
-        .comment-item {
-          padding: 10px 0 0 10px;
-          background: var(--comment-bg-color);
-          border-radius: 4px;
-        }
-        .comment-list > .comment-item {
-          padding: 10px;
-          margin-bottom: 15px;
-        }
-        .reply-item {
-          margin-left: 20px;
-        }
-
-        .reply-btn {
-          margin-left: 10px;
-          color: var(--hint-color);
-          cursor: pointer;
-          font-size: 12px;
-          display: inline-block;
-        }
-        .form-group {
-          display: flex;
-          flex-direction: row;
-          align-items: flex-start;
-          margin: 20px 0;
-        }
-        .form-group textarea {
-          background: var(--input-bg-color);
-          color: var(--text-color);
-          border: 1px solid var(--border-color);
-          padding: 8px;
-          width: 100%;
-          height: 60px;
-          resize: vertical;
-          margin-bottom: 10px;
-          font-size: 14px;
-        }
-        .form-group .comment-action {
-          display: flex;
-          flex-direction: column;
-          justify-content: flex-end;
-          align-items: flex-end;
-        }
-        .form-group button {
-          background: var(--button-bg-color);
-          color: var(--button-text-color);
-          border: none;
-          padding: 6px 10px;
-          cursor: pointer;
-          border-radius: 3px;
-          transition: background 0.3s ease, transform 0.2s ease;
-          margin-left: 5px;
-          font-size: 12px;
-          white-space: nowrap;
-        }
-        .form-group button:hover {
-          background: var(--button-hover-color);
-          transform: scale(1.02);
-        }
-        .form-group button[disabled] {
-          background: #ddd; /* 禁用状態時の背景色 */
-          color: #999; /* 禁用状態時の文字色 */
-          cursor: not-allowed; /* 禁用状態時のマウスカーソル */
-        }
-        .form-group button[disabled]:hover {
-          background: #ddd; /* 禁用状態時の背景色 */
-          color: #999; /* 禁用状態時の文字色 */
-          transform: none;
-        }
-        .comment-tip {
-          font-size: 0.8em;
-          color: var(--hint-color);
-          margin-top: 5px;
-          white-space: nowrap;
-        }
-        .cf-challenge {
-          margin-bottom: 10px;
-        }
-        /* ツールチップ */
-        .tooltip {
-          position: relative;
-          display: inline-block;
-        }
-        .tooltip .tooltiptext {
-          visibility: hidden;
-          background-color: var(--hint-color);
-          color: var(--text-color);
-          text-align: center;
-          border-radius: 6px;
-          padding: 5px;
-          position: absolute;
-          z-index: 1;
-          bottom: 125%;
-          left: 50%;
-          margin-left: -60px;
-          font-size: 0.8em;
-          white-space: nowrap;
-          opacity: 0;
-          transition: opacity 0.3s;
-        }
-        .tooltip:hover .tooltiptext {
-          visibility: visible;
-          opacity: 1;
-        }
-        .notification-bar {
-          position: fixed;
-          bottom: 0;
-          left: 0;
-          width: 100%;
-          background: var(--notification-bg-color);
-          color: var(--notification-text-color);
-          padding: 10px 20px;
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          font-size: 14px;
-          z-index: 9999;
-        }
-        .notification-bar.hidden {
-          display: none;
-        }
-        .close-btn {
-          cursor: pointer;
-          margin-left: 20px;
-          font-weight: bold;
-        }
-
-        /* 隠されたコメントの場合、プレースホルダー/ボタンのみ表示 */
-        .hidden-comment-placeholder {
-          font-style: italic;
-          color: var(--hint-color);
-        }
-        .show-btn {
-          color: var(--link-color);
-          margin-left: 8px;
-          cursor: pointer;
-        }
-        .show-btn:hover {
-          text-decoration: underline;
-        }
-        .show-comment-input {
-          margin-top: 10px;
-          text-align: left;
-        }
-        .show-comment-input button {
-          background: var(--button-bg-color);
-          color: var(--button-text-color);
-          border: none;
-          padding: 8px 12px;
-          cursor: pointer;
-          border-radius: 3px;
-          transition: background 0.3s ease, transform 0.2s ease;
-          margin-bottom: 10px;
-        }
-        .show-comment-input button:hover {
-          background: var(--button-hover-color);
-          transform: scale(1.02);
-        }
-        /* 深色・浅色テーマ */
-        :root {
-          --bg-color: #121212;
-          --text-color: #fff;
-          --link-color: #bbb;
-          --link-hover-color: #fff;
-          --input-bg-color: #1e1e1e;
-          --border-color: #444;
-          --button-bg-color: #333;
-          --button-text-color: #fff;
-          --button-hover-color: #444;
-          --notification-bg-color: #2a2a2a;
-          --notification-text-color: #fff;
-          --comment-bg-color: #1e1e1e;
-          --comment-text-color: #ccc;
-          --hint-color: #aaa;
-        }
-
-        [data-theme="light"] {
-          --bg-color: #ffffff;
-          --text-color: #333;
-          --link-color: #555;
-          --link-hover-color: #000;
-          --input-bg-color: #eee;
-          --border-color: #ccc;
-          --button-bg-color: #ddd;
-          --button-text-color: #333;
-          --button-hover-color: #eee;
-          --notification-bg-color: #f0f0f0;
-          --notification-text-color: #333;
-          --comment-bg-color: #eee;
-          --comment-text-color: #555;
-          --hint-color: #777;
-        }
-      </style>
+      <link rel="stylesheet" href="/main.css" />
     </head>
     <body>
       <div class="hint">${area.intro || ""}</div>
@@ -1850,7 +1611,16 @@ async function handleCommentAreaPage(
         <span id="notificationText"></span>
         <span id="closeNotification" class="close-btn">×</span>
       </div>
-      <script>
+      <script src="/mimic.js" type="module"></script>
+      <script type="module">
+        import $ from "/mimic.js";
+
+        function h(tagName, options = {}, ...children) {
+          const element = document.createElement(tagName);
+          element.append(...children);
+          return Object.assign(element, options);
+        }
+
         const notificationBar = document.getElementById("notificationBar");
         const notificationText = document.getElementById("notificationText");
         const closeNotification = document.getElementById("closeNotification");
@@ -1901,55 +1671,31 @@ async function handleCommentAreaPage(
           const tree = buildCommentTree(comments);
           tree.forEach((comment) => {
             if (comment.hidden !== 1) {
-              commentList.appendChild(renderCommentItem(comment));
+              commentList.appendChild(renderCommentItem(comment).nodes[0]);
             }
           });
         }
         function renderCommentItem(comment) {
-          const div = document.createElement("div");
-          div.className =
-            "comment-item" + (comment.parent_id ? " reply-item" : "");
-          div.innerHTML = \`
-              <div class="markdown-content markdown-body">\${
-                comment.html_content
-              }</div>
-                  <small style="color:#777;">\${
-                    comment.created_at || ""
-                  }</small>
-                  <span class="reply-btn" data-comment-id="\${
-                    comment.id
-                  }" style="text-decoration: none;">${t.reply_btn}</span>
-          \`;
+          let div = $("<div/>")
+            .add("comment")
+            .make("div")
+            .text(comment.html_content)
+            .parent()
+            .make("span")
+            .text(comment.created_at)
+            .parent()
+            .make("span")
+            .add("reply-btn")
+            .data("commentId", comment.id)
+            .text("${t.reply_btn}")
+            .parent();
 
-          // 子返信がある場合
-          if (comment.replies && comment.replies.length > 0) {
-            comment.replies.forEach((r) => {
-              div.appendChild(renderCommentItem(r));
-            });
-          }
+          comment.replies?.forEach((r) => {
+            div.append(renderCommentItem(r));
+          });
           return div;
         }
 
-        // 個別コメントのピン留め切り替え（管理者のみ）
-        window.togglePinComment = async (commentId) => {
-          const res = await fetch(
-            "/admin/comment/" + commentId + "/togglePin",
-            { method: "POST" }
-          );
-          if (res.ok) {
-            showNotification("${t.notification_toggle_success}");
-            // ローカルで更新
-            const index = comments.findIndex((c) => c.id === commentId);
-            if (index !== -1) {
-              comments[index].pinned = comments[index].pinned === 1 ? 0 : 1;
-            }
-            renderComments(comments);
-          } else {
-            showNotification(
-              "${t.notification_toggle_failed}：" + (await res.text())
-            );
-          }
-        };
         // 入力ボックスを監視
         const newCommentInput = document.getElementById("newComment");
         const submitButton = document.getElementById("submitBtn");
