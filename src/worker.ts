@@ -2302,64 +2302,7 @@ async function handlePostComment(
 
   return new Response("OK", { status: 200 });
 }
-/** コメントを「いいね」する */
-async function handleLikeComment(
-  request: Request,
-  env: Env
-): Promise<Response> {
-  const match = request.url.match(/\/comment\/(\d+)\/like$/);
-  if (!match) {
-    return new Response("Invalid", { status: 400 });
-  }
-  const commentId = parseInt(match[1], 10);
-  // コメントが存在するかチェック
-  const comment: { likes: number } | null = await env.DB.prepare(
-    "SELECT likes FROM comments WHERE id=?"
-  )
-    .bind(commentId)
-    .first<{ likes: number }>();
-  if (!comment) {
-    return new Response("Comment does not exist", { status: 404 });
-  }
-  const newLikes = (comment.likes || 0) + 1;
-  await env.DB.prepare("UPDATE comments SET likes=? WHERE id=?")
-    .bind(newLikes, commentId)
-    .run();
-  return new Response("OK", { status: 200 });
-}
-/** コメントをレポートする */
-async function handleReportComment(
-  request: Request,
-  env: Env
-): Promise<Response> {
-  const match = new URL(request.url).pathname.match(
-    /\/comment\/(\d+)\/report$/
-  );
-  if (!match) {
-    return new Response("Invalid", { status: 400 });
-  }
-  const commentId = parseInt(match[1], 10);
-  const formData = await request.formData();
-  const reason = String(formData.get("reason") || "");
 
-  if (!reason) {
-    return new Response("Missing report reason", { status: 400 });
-  }
-  // コメントが存在するかチェック
-  const comment: { id: number } | null = await env.DB.prepare(
-    "SELECT id FROM comments WHERE id=?"
-  )
-    .bind(commentId)
-    .first<{ id: number }>();
-  if (!comment) {
-    return new Response("Comment does not exist", { status: 404 });
-  }
-  // レポートを書き込む
-  await env.DB.prepare("INSERT INTO reports (comment_id, reason) VALUES (?, ?)")
-    .bind(commentId, reason)
-    .run();
-  return new Response("OK", { status: 200 });
-}
 /** 議論エリアを削除する (管理者) */
 async function handleDeleteArea(
   areaKeyEncoded: string,
