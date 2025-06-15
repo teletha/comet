@@ -5,7 +5,6 @@ body {
 
 .comment-list {
     font-size: 15px;
-    line-height: 1.4;
     color: var(--comment-text-color);
     margin-top: 20px;
 }
@@ -17,11 +16,17 @@ body {
 }
 
 .comment-list>.comment {
-    padding: 10px;
+    padding: 12px;
     margin-bottom: 15px;
 }
 
+.comment div:first-child {
+    line-height: 1.5;
+    padding-bottom:  6px;
+}
+
 .comment span {
+    color: var(--hint-color);
     font-size: 12px;
 }
 

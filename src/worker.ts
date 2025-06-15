@@ -1425,11 +1425,7 @@ async function handleCommentAreaPage(request: Request, env: Env, lang: string, t
     const url = new URL(request.url);
     const areaKey = decodeURIComponent(url.pathname.replace(/^\/area\//, ""));
     const t = i18n[lang] || i18n["en"];
-    const area: CommentArea | null = await env.DB.prepare(
-        `
- SELECT * FROM comment_areas WHERE area_key = ?
- `
-    )
+    const area: CommentArea | null = await env.DB.prepare(`SELECT * FROM comment_areas WHERE area_key = ?`)
         .bind(areaKey)
         .first<CommentArea>();
 
@@ -1446,14 +1442,14 @@ async function handleCommentAreaPage(request: Request, env: Env, lang: string, t
             <link rel="stylesheet" href="/main.css" />
         </head>
         <body>
+            <div class="comment-list" id="commentList">Loading...</div>
             <div id="commentForm">
                 <textarea id="newComment" placeholder="Write your comment"></textarea>
                 <div class="cf-challenge" data-sitekey="${env.TURNSTILE_SITEKEY || ""}" data-theme="auto"></div>
                 <input type="hidden" id="parentId" value="0" />
-                <button id="submitBtn" disabled>${t.submit_comment_btn}</button>
+                <button id="submitBtn" disabled>Submit</button>
             </div>
 
-            <div class="comment-list" id="commentList">${t.loading}</div>
             <!-- 通知バー -->
             <div id="notificationBar" class="notification-bar hidden">
                 <span id="notificationText"></span>
@@ -1462,12 +1458,6 @@ async function handleCommentAreaPage(request: Request, env: Env, lang: string, t
             <script src="/mimic.js" type="module"></script>
             <script type="module">
                 import $ from "/mimic.js";
-
-                function h(tagName, options = {}, ...children) {
-                    const element = document.createElement(tagName);
-                    element.append(...children);
-                    return Object.assign(element, options);
-                }
 
                 const notificationBar = document.getElementById("notificationBar");
                 const notificationText = document.getElementById("notificationText");
