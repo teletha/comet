@@ -1,12 +1,7 @@
-body {
-    max-width: 800px;
-    margin: 20px auto;
-}
-
 .comment-list {
     font-size: 15px;
     color: var(--comment-text-color);
-    margin-top: 20px;
+    margin: 20px 0;
 }
 
 .comment {
