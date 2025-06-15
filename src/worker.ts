@@ -916,7 +916,7 @@ async function handleHomePage(
         />
         <style>
           body {
-            background: var(--bg-color);
+            background:; var(--bg-color)
             color: var(--text-color);
             font-family: sans-serif;
             max-width: 800px;
@@ -1609,61 +1609,35 @@ async function handleCommentAreaPage(
     <head>
       <style>
         body {
-          background: var(--bg-color);
-          color: var(--text-color);
-          font-family: sans-serif;
           max-width: 800px;
-          margin: 40px auto;
-          padding: 20px;
-        }
-        a {
-          color: var(--link-color);
-          text-decoration: none;
-        }
-        a:hover {
-          color: var(--link-hover-color);
-        }
-        .hint {
-          color: var(--hint-color);
-          margin-bottom: 10px;
+          margin: 20px auto;
         }
         .comment-list {
+          font-size: 15px;
+          line-height: 1.4;
+          color: var(--comment-text-color);
           margin-top: 20px;
+          padding: 10px;
         }
         .comment-item {
           padding: 10px 0 0 10px;
           background: var(--comment-bg-color);
           border-radius: 4px;
-          /* border: 1px solid var(--border-color); */
         }
-
         .comment-list > .comment-item {
           padding: 10px;
           margin-bottom: 15px;
         }
-
         .reply-item {
           margin-left: 20px;
         }
-        .reply-btn,
-        .report-btn,
-        .like-btn {
+
+        .reply-btn {
           margin-left: 10px;
           color: var(--hint-color);
           cursor: pointer;
           font-size: 12px;
           display: inline-block;
-        }
-        .like-btn.liked {
-          color: var(--link-color);
-        }
-        .reply-box {
-          margin-top: 5px;
-        }
-        .markdown-content {
-          font-size: 12px;
-          color: var(--comment-text-color);
-          padding: 2px 0;
         }
         .form-group {
           display: flex;
@@ -1836,29 +1810,6 @@ async function handleCommentAreaPage(
           --comment-bg-color: #eee;
           --comment-text-color: #555;
           --hint-color: #777;
-        }
-        .top-actions {
-          margin-bottom: 20px;
-          display: flex;
-          justify-content: flex-end;
-        }
-        .top-actions button {
-          background: var(--button-bg-color);
-          color: var(--button-text-color);
-          border: none;
-          padding: 8px 12px;
-          cursor: pointer;
-          border-radius: 3px;
-          transition: background 0.3s ease, transform 0.2s ease;
-          margin-left: 10px;
-        }
-
-        .top-actions button:hover {
-          background: var(--button-hover-color);
-          transform: scale(1.02);
-        }
-        .markdown-content.markdown-body {
-          background-color: inherit;
         }
       </style>
     </head>
